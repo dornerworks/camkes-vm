@@ -67,6 +67,7 @@
     /* File Server */ \
     uses FileServerInterface fs; \
     uses GetChar serial_getchar; \
+    has mutex serial; \
     attribute string kernel_cmdline; \
     attribute string kernel_image; \
     attribute string kernel_relocs; \

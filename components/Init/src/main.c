@@ -20,12 +20,14 @@
 #include <sel4platsupport/arch/io.h>
 #include <sel4utils/vspace.h>
 #include <sel4utils/stack.h>
+#include <sel4utils/thread.h>
 #include <allocman/utspace/split.h>
 #include <allocman/bootstrap.h>
 #include <allocman/vka.h>
 #include <simple/simple_helpers.h>
 #include <utils/util.h>
 #include <vka/capops.h>
+#include <vka/object_capops.h>
 
 #include <camkes.h>
 #include <camkes_vmm/gen_config.h>
@@ -37,6 +39,7 @@
 #include "vmm/platform/boot_guest.h"
 #include "vmm/platform/guest_vspace.h"
 #include "vmm/vchan_component.h"
+#include "vmm/debug.h"
 
 #include "vmm/vmm_manager.h"
 #include "vm.h"
@@ -47,6 +50,9 @@
 
 #define BRK_VIRTUAL_SIZE 400000000
 #define ALLOCMAN_VIRTUAL_SIZE 400000000
+
+#define VMM_THREAD_NAME_LEN 17
+#define VMM_FAULT_THREAD_NAME_LEN 31
 
 reservation_t muslc_brk_reservation;
 void *muslc_brk_reservation_start;
@@ -68,6 +74,8 @@ static vka_t vka;
 static vspace_t vspace;
 static sel4utils_alloc_data_t vspace_data;
 static vmm_t vmm;
+static int num_secondary_threads;
+static sel4utils_thread_t *vmm_secondary_threads;
 
 int cross_vm_dataports_init(vmm_t *vmm) WEAK;
 int cross_vm_consumes_events_init(vmm_t *vmm, vspace_t *vspace, seL4_Word irq_badge) WEAK;
@@ -478,6 +486,14 @@ int fake_vchan_handler(vmm_vcpu_t *vcpu) {
     return 0;
 }
 
+int fake_interrupt_handler(void) {
+    return -1;
+}
+
+int fake_do_async_handler(seL4_Word badge) {
+    return 1;
+}
+
 void init_con_irq_init(void) {
     int i;
     int irqs = 0;
@@ -496,6 +512,123 @@ void init_con_irq_init(void) {
         device_notify_list[i].badge = badge;
         device_notify_list[i].func = (void (*)(vmm_t*))fun;
     }
+}
+
+void secondary_vmm(void *arg0, void *arg1, void *ipc_buf) {
+    vmm_vcpu_t *vcpu = (vmm_vcpu_t *)arg0;
+
+    vmm_run_vcpu(vcpu);
+}
+
+/* Returns number of secondary VM cores */
+static int get_secondary_assigned_cores(int max_core, int *cores) {
+    if(NULL == cores) {
+        return -1;
+    }
+
+    int my_core = get_instance_core();
+    int num_secondary_cores = 0;
+
+    for(int i = 0; i < max_core; i++) {
+        if(i != my_core) {
+            if(seL4_CapNull != simple_get_sched_ctrl(&camkes_simple, i)) {
+                *cores++ = i;
+                num_secondary_cores++;
+            }
+        }
+    }
+
+    return num_secondary_cores;
+}
+
+static int create_secondary_vmm_thread(sel4utils_thread_t *new_thread, int core, vmm_vcpu_t *vcpu) {
+
+    assert(new_thread);
+    assert(vcpu);
+
+    int error;
+    sel4utils_thread_t fault_thread;
+    sched_params_t fault_sched_params;
+    seL4_CNode cspace = simple_get_cnode(&camkes_simple);
+
+    char vmm_thread_name[VMM_THREAD_NAME_LEN];
+    snprintf(vmm_thread_name, VMM_THREAD_NAME_LEN, "%s_vmmcore%d", get_instance_name(), core);
+
+    char vmm_fault_thread_name[VMM_FAULT_THREAD_NAME_LEN];
+    snprintf(vmm_fault_thread_name, VMM_FAULT_THREAD_NAME_LEN, "%s_vmmcore%d:fault_handler",
+             get_instance_name(), core);
+
+    sel4utils_thread_config_t config = thread_config_new(&camkes_simple);
+    config.sched_params = sched_params_round_robin(config.sched_params, &camkes_simple,
+                                                    core, US_IN_S);
+
+    vka_object_t endpoint = {0};
+    vka_alloc_endpoint(&vka, &endpoint);
+    config = thread_config_fault_endpoint(config, endpoint.cptr);
+    config = thread_config_priority(config, CONFIG_CAMKES_DEFAULT_PRIORITY);
+    config = thread_config_mcp(config, CONFIG_CAMKES_DEFAULT_MAX_PRIORITY - 1);
+    config = thread_config_create_reply(config);
+
+    /* fault hander uses same sched_params, but runs with the max priority */
+    fault_sched_params = config.sched_params;
+    fault_sched_params.priority = CONFIG_CAMKES_DEFAULT_MAX_PRIORITY;
+
+    error = sel4utils_start_fault_handler(endpoint.cptr, &vka, &vspace, cspace, 0,
+                                          vmm_thread_name, &fault_sched_params, &fault_thread);
+    if(error) {
+        ZF_LOGE("Failed to start secondary vmm fault thread");
+        goto err1;
+    }
+
+    NAME_THREAD(fault_thread.tcb.cptr, vmm_fault_thread_name);
+
+    error = sel4utils_configure_thread_config(&vka, &vspace, &vspace, config, new_thread);
+    if(error) {
+        ZF_LOGE("Failed to configure %s\n", vmm_thread_name);
+        goto err2;
+    }
+
+    NAME_THREAD(new_thread->tcb.cptr, vmm_thread_name);
+
+    /* These callbacks are designed for hardware interrupts. Secondary VMMs only deal with IPIs */
+    platform_callbacks_t callbacks = (platform_callbacks_t) {
+        .get_interrupt = fake_interrupt_handler,
+        .has_interrupt = fake_interrupt_handler,
+        .do_async = fake_do_async_handler,
+    };
+
+    vka_object_t async_event_notification = {0};
+    vka_alloc_notification(&vka, &async_event_notification);
+
+    error =  vmm_init_secondary_vcpu(vcpu, callbacks, core, new_thread, &config.sched_params,
+                                     async_event_notification.cptr);
+    if(error) {
+       ZF_LOGE("Failed to init %s\n", vmm_thread_name);
+       goto err3;
+    }
+
+    goto ret;
+
+err3:
+    vka_free_object(&vka, &async_event_notification);
+err2:
+    sel4utils_clean_up_thread(&vka, &vspace, new_thread);
+err1:
+    sel4utils_clean_up_thread(&vka, &vspace, &fault_thread);
+    vka_free_object(&vka, &endpoint);
+ret:
+    return error;
+}
+
+static int start_secondary_vmm_thread(sel4utils_thread_t *new_thread, vmm_vcpu_t *vcpu) {
+    int error = sel4utils_start_thread(new_thread, (sel4utils_thread_entry_fn)&secondary_vmm,
+                                       vcpu, NULL, 1);
+    if(error) {
+       ZF_LOGE("Failed to start thread\n");
+       sel4utils_clean_up_thread(&vka, &vspace, new_thread);
+    }
+
+    return error;
 }
 
 void *main_continued(void *arg) {
@@ -521,11 +654,22 @@ void *main_continued(void *arg) {
         .get_interrupt = i8259_get_interrupt,
         .has_interrupt = i8259_has_interrupt,
         .do_async = handle_async_event,
-        .get_async_event_notification = get_async_event_notification,
     };
 
+    /* Get all of the cores assigned to this VM that we are not already running on, if any */
+    int max_core = simple_get_core_count(&camkes_simple);
+    int *cores = NULL;
+    int num_secondary_threads = 0;
+    if(max_core > 0) {
+        cores = (int *)malloc(sizeof(*cores) * max_core);
+        ZF_LOGF_IF(NULL == cores, "Failed to alloc vmm cores list\n");
+        num_secondary_threads = get_secondary_assigned_cores(max_core, cores);
+        ZF_LOGF_IF(num_secondary_threads < 0, "Could not get list for secondary cores\n");
+    }
+
     ZF_LOGI("VMM init");
-    error = vmm_init(&vmm, allocman, camkes_simple, vka, vspace, callbacks);
+    error = vmm_init(&vmm, allocman, camkes_simple, vka, vspace, callbacks, num_secondary_threads + 1,
+                     get_instance_core(), get_async_event_notification());
     ZF_LOGF_IF(error, "VMM init failed");
 
     /* First we initialize any host information */
@@ -533,9 +677,20 @@ void *main_continued(void *arg) {
     error = vmm_init_host(&vmm);
     ZF_LOGF_IF(error, "VMM init host failed");
 
+
+    /* Create a vmm thread for each core this VM is assigned that we are not already running on */
+    vmm_secondary_threads = (sel4utils_thread_t *)malloc(num_secondary_threads * sizeof(*vmm_secondary_threads));
+    assert(NULL != vmm_secondary_threads);
+    int vcpu_index = BOOT_VCPU + 1;
+    for(int i = 0; i < num_secondary_threads; i++) {
+        error = create_secondary_vmm_thread(&vmm_secondary_threads[i], cores[i], &vmm.vcpus[vcpu_index]);
+        ZF_LOGF_IF(error, "Could not create a vmm thread for core %d, VCPU %d\n", cores[i], vcpu_index);
+        vcpu_index++;
+    }
+
     ZF_LOGI("Init guest");
     /* Early init of guest. We populate everything later */
-    error = vmm_init_guest(&vmm, CONFIG_CAMKES_DEFAULT_PRIORITY);
+    error = vmm_init_guest(&vmm);
     ZF_LOGF_IF(error, "Guest init failed");
 
     /* Initialize the init device badges and notification functions */
@@ -741,10 +896,19 @@ void *main_continued(void *arg) {
     error = vmm_finalize(&vmm);
     ZF_LOGF_IF(error, "Failed to finalise VMM");
 
+    vcpu_index = BOOT_VCPU + 1;
+    for(int i = 0; i < num_secondary_threads; i++) {
+        error = start_secondary_vmm_thread(&vmm_secondary_threads[i], &vmm.vcpus[vcpu_index]);
+        ZF_LOGF_IF(error, "Could not start a vmm thread for core %d, VCPU %d\n", cores[i], vcpu_index);
+        vcpu_index++;
+    }
+
 //    vmm_exit_init();
     /* Now go run the event loop */
-    vmm_run(&vmm);
+    vmm_run_vcpu(&vmm.vcpus[BOOT_VCPU]);
 
+    free(cores);
+    free(vmm_secondary_threads);
     return NULL;
 }
 

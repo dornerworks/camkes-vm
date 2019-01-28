@@ -415,6 +415,9 @@ static void serial_xmit(void *opaque)
 
 static void serial_ioport_write(void *opaque, uint32_t addr, uint32_t val)
 {
+    int err UNUSED;
+    err = serial_lock();
+
     SerialState *s = opaque;
 
     addr &= 7;
@@ -561,6 +564,7 @@ static void serial_ioport_write(void *opaque, uint32_t addr, uint32_t val)
         s->scr = val;
         break;
     }
+    err = serial_unlock();
 }
 
 static int serial_can_receive(SerialState *s)
@@ -580,6 +584,9 @@ static int serial_can_receive(SerialState *s)
 
 static uint32_t serial_ioport_read(void *opaque, uint32_t addr)
 {
+    int err UNUSED;
+    err = serial_lock();
+
     SerialState *s = opaque;
     uint32_t ret;
 
@@ -660,6 +667,8 @@ static uint32_t serial_ioport_read(void *opaque, uint32_t addr)
         ret = s->scr;
         break;
     }
+    err = serial_unlock();
+
     DPRINTF("read addr=0x%02x val=0x%02x\n", addr, ret);
     return ret;
 }
@@ -981,6 +990,10 @@ device_init(serial_register_devices)
 static SerialState serialstate;
 
 void serial_timer_interrupt(uint32_t completed) {
+
+    int err UNUSED;
+    err = serial_lock();
+
     SerialState *s = (SerialState*)&serialstate;
     if (completed & BIT(TIMER_FIFO_TIMEOUT)) {
         fifo_timeout_int(s);
@@ -1002,9 +1015,14 @@ void serial_timer_interrupt(uint32_t completed) {
             init_timer_oneshot_relative(TIMER_MORE_CHARS, 3 * NS_IN_MS);
         }
     }
+    err = serial_unlock();
 }
 
 void serial_character_interrupt() {
+
+    int err UNUSED;
+    err = serial_lock();
+
     SerialState *s = (SerialState*)&serialstate;
     uint8_t c;
     while (serial_can_receive(s) && serial_buffer_dequeue(&c)) {
@@ -1014,6 +1032,8 @@ void serial_character_interrupt() {
         /* Set up a timeout so we go get more chars later */
         init_timer_oneshot_relative(TIMER_MORE_CHARS, 3 * NS_IN_MS);
     }
+
+    err = serial_unlock();
 }
 
 void serial_pre_init(void) {
