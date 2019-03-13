@@ -54,6 +54,8 @@
 #define VMM_THREAD_NAME_LEN 17
 #define VMM_FAULT_THREAD_NAME_LEN 31
 
+const char *initrd_image WEAK = "";
+
 reservation_t muslc_brk_reservation;
 void *muslc_brk_reservation_start;
 vspace_t  *muslc_this_vspace;
@@ -655,8 +657,10 @@ void *main_continued(void *arg) {
 
     ioops = make_pci_io_ops();
 
-    ZF_LOGI("PCI scan");
-    libpci_scan(ioops);
+    if (pci_devices_num_devices() > 0) {
+        ZF_LOGI("PCI scan");
+        libpci_scan(ioops);
+    }
 
     /* install custom open/close/read implementations to redirect I/O from the VMM to
      * our file server */
@@ -893,9 +897,6 @@ void *main_continued(void *arg) {
     }
 
     vmm_plat_init_guest_boot_structure(&vmm, kernel_cmdline);
-
-    error = reg_new_handler(&vmm, &vchan_handler, VMM_MANAGER_TOKEN);
-    ZF_LOGF_IF(error, "Failed register vchan_handler");
 
     if (cross_vm_dataports_init) {
         error = cross_vm_dataports_init(&vmm);

@@ -67,9 +67,8 @@ function(DeclareCAmkESVMRootServer camkes_config)
     )
     # Initialise the CAmKES VM fileserver    
     DefineCAmkESVMFileServer()
-    get_absolute_source_or_binary(config_file "${camkes_config}")
-    # Declare CAmkES root server   
-    DeclareCAmkESRootserver(${config_file}
+    # Declare CAmkES root server
+    DeclareCAmkESRootserver(${CMAKE_CURRENT_SOURCE_DIR}/${camkes_config}
         CPP_FLAGS ${CAMKES_ROOT_VM_CPP_FLAGS}
         CPP_INCLUDES "${VM_PROJECT_DIR}/components/VM" ${CAMKES_ROOT_VM_CPP_INCLUDES}
     )
