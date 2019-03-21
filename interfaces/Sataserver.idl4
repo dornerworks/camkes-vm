@@ -1,0 +1,15 @@
+/*
+ * Copyright 2019, DornerWorks
+ *
+ * This software may be distributed and modified according to the terms of
+ * the GNU General Public License version 2. Note that NO WARRANTY is provided.
+ * See "LICENSE_GPLv2.txt" for details.
+ *
+ */
+
+procedure SataserverInterface {
+    int tx(in unsigned int sector, in unsigned int len);
+    int rx(in unsigned int sector, in unsigned int len);
+    unsigned int get_capacity(void);
+    unsigned int get_status(void);
+};

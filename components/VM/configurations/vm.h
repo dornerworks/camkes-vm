@@ -43,8 +43,11 @@
 #define VM_PIC_BADGE_SERIAL_HAS_DATA 134348800 /* BIT(27) | BIT(17) */
 #define VM_PIC_BADGE_VCHAN_HAS_DATA 134479872 /* BIT(27) | BIT(18) */
 
+/* Badges for Sataserver */
+#define VM_PIC_BADGE_BLK_XFER 134742016    /* BIT(27) | BIT(19) */
+
 /* First available badge for user bits */
-#define VM_FIRST_BADGE_BIT 18
+#define VM_FIRST_BADGE_BIT 20
 
 /* Base definition of the Init component. This gets
  * extended in the per Vm configuration */

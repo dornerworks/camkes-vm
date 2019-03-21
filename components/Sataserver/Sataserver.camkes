@@ -1,0 +1,50 @@
+/*
+ * Copyright 2019, DornerWorks
+ *
+ * This software may be distributed and modified according to the terms of
+ * the GNU General Public License version 2. Note that NO WARRANTY is provided.
+ * See "LICENSE_GPLv2.txt" for details.
+ *
+ * @TAG(DORNERWORKS_GPL)
+ *
+ */
+
+import <Sataserver.idl4>;
+import <PutChar.idl4>;
+
+#if LIBSATADRIVERSAHCIENABLE
+#include <plat/sata.h>
+
+component HWSata {
+    hardware;
+    HARDWARE_SATA_PROVIDES_INTERFACES
+};
+#endif
+
+component Sataserver {
+    has mutex sataserver_mux;
+    provides SataserverInterface client;
+    attribute int iospace_id;
+    /* format for bdf is "BUS:DEV.fun,BUS:DEV.fun,..." where BUS and DEV are hex and FUN is decimal */
+    attribute string pci_bdfs;
+    /* Some controllers have an odd quirk where they use multiple PCI ports. Should match number of
+     * ports set in the pci_bdfs string. See https://bugzilla.kernel.org/show_bug.cgi?id=42679
+     * for description of why this is needed
+     */
+    attribute int num_bdfs;
+    attribute int drive;
+
+    uses PutChar putchar;
+
+#if LIBSATADRIVERSAHCIENABLE
+    HARDWARE_SATA_INTERFACES
+
+    /* Connect the hardware Sata to the Sata component */
+    composition {
+        HARDWARE_SATA_COMPOSITION
+    }
+    configuration {
+        HARDWARE_SATA_CONFIG
+    }
+#endif
+}

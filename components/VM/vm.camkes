@@ -40,6 +40,7 @@ import <TimeServer/TimeServer.camkes>;
 import <RTC/RTC.camkes>;
 import <SerialServer/SerialServer.camkes>;
 import <Ethdriver/Ethdriver.camkes>;
+import <Sataserver/Sataserver.camkes>;
 import <UDPServer/UDPServer.camkes>;
 import <PicoUDPServer/PicoUDPServer.camkes>;
 import <Vchan/Vchan.camkes>;
@@ -111,6 +112,11 @@ connector seL4VMPCIDevices {
 connector seL4Ethdriver {
     from Procedures template "seL4Ethdriver-from.template.c" with 0 threads;
     to Procedure template "seL4Ethdriver-to.template.c";
+}
+
+connector seL4Sataserver {
+    from Procedures template "seL4Sataserver-from.template.c" with 0 threads;
+    to Procedure template "seL4Sataserver-to.template.c";
 }
 
 connector seL4MultiSharedData {
