@@ -161,7 +161,7 @@
     fserv.heap_size = 165536; \
     serial.timeout_attributes = 1; \
     time_server.putchar_attributes = 0; \
-    time_server.timers_per_client = 9; \
+    time_server.timers_per_client = 12; \
     pci_config.putchar_attributes = 0; \
     rtc.putchar_attributes = 0; \
     /* Put the entire time server at the highest priority */ \

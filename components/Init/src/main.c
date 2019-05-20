@@ -114,6 +114,7 @@ static seL4_Error simple_frame_cap_wrapper(void *data, void *paddr, int size_bit
 void pit_pre_init(void);
 void rtc_pre_init(void);
 void serial_pre_init(void);
+void hpet_pre_init(void);
 
 void pre_init(void) {
     int error;
@@ -394,6 +395,7 @@ static device_notify_t *device_notify_list = NULL;
 void pit_timer_interrupt(void);
 void rtc_timer_interrupt(uint32_t);
 void serial_timer_interrupt(uint32_t);
+void hpet_timer_interrupt(uint32_t);
 
 static seL4_Word irq_badges[16] = {
     VM_PIC_BADGE_IRQ_0,
@@ -429,6 +431,11 @@ static int handle_async_event(seL4_Word badge) {
             if (completed & (BIT(TIMER_FIFO_TIMEOUT) | BIT(TIMER_TRANSMIT_TIMER) | BIT(TIMER_MODEM_STATUS_TIMER) | BIT(TIMER_MORE_CHARS))) {
                 serial_timer_interrupt(completed);
             }
+#ifdef CONFIG_VMM_USE_HPET
+            if (completed & (BIT(TIMER_HPET0) | BIT(TIMER_HPET1) | BIT(TIMER_HPET2))) {
+                hpet_timer_interrupt(completed);
+            }
+#endif
         }
         if ( (badge & VM_PIC_BADGE_SERIAL_HAS_DATA) == VM_PIC_BADGE_SERIAL_HAS_DATA) {
             serial_character_interrupt();
@@ -513,6 +520,8 @@ void init_con_irq_init(void) {
         device_notify_list[i].func = (void (*)(vmm_t*))fun;
     }
 }
+
+void hpet_reg_callbacks(vmm_vcpu_t *);
 
 void secondary_vmm(void *arg0, void *arg1, void *ipc_buf) {
     vmm_vcpu_t *vcpu = (vmm_vcpu_t *)arg0;
@@ -607,6 +616,10 @@ static int create_secondary_vmm_thread(sel4utils_thread_t *new_thread, int core,
        goto err3;
     }
 
+#ifdef CONFIG_VMM_USE_HPET
+    hpet_reg_callbacks(vcpu);
+#endif
+
     goto ret;
 
 err3:
@@ -634,7 +647,7 @@ static int start_secondary_vmm_thread(sel4utils_thread_t *new_thread, vmm_vcpu_t
 void *main_continued(void *arg) {
     int error;
     int i;
-    int have_initrd = 0;
+    int have_initrd, have_relocs = 0;
     ps_io_port_ops_t ioops;
 
     rtc_time_date_t time_date = system_rtc_time_date();
@@ -698,6 +711,7 @@ void *main_continued(void *arg) {
     init_con_irq_init();
 
     have_initrd = !(strcmp(initrd_image, "") == 0);
+    have_relocs = !(strcmp(kernel_relocs, "") == 0);
 
     ZF_LOGI("Init irqs");
     init_irqs();
@@ -713,6 +727,13 @@ void *main_continued(void *arg) {
 
     ZF_LOGI("RTC pre init");
     rtc_pre_init();
+
+#ifdef CONFIG_VMM_USE_HPET
+    ZF_LOGI("HPET pre init");
+    hpet_pre_init();
+
+    hpet_reg_callbacks(&vmm.vcpus[BOOT_VCPU]);
+#endif
 
 #ifdef CONFIG_CAMKES_VM_GUEST_DMA_IOMMU
     /* Do early device discovery and find any relevant PCI busses that
@@ -859,9 +880,11 @@ void *main_continued(void *arg) {
     error = vmm_load_guest_elf(&vmm, kernel_image, BIT(PAGE_BITS_4M));
     ZF_LOGF_IF(error, "Failed to load guest elf file");
 
-    /* Relocate the elf */
-    ZF_LOGI("Relocate elf");
-    vmm_plat_guest_elf_relocate(&vmm, kernel_relocs);
+    if (have_relocs) {
+        /* Relocate the elf */
+        ZF_LOGI("Relocate elf");
+        vmm_plat_guest_elf_relocate(&vmm, kernel_relocs);
+    }
 
     /* Add a boot module */
     if (have_initrd) {
