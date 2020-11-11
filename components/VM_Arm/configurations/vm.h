@@ -173,6 +173,7 @@
     time_server.simple = true;
 
 #define PER_VM_VIRTUAL_SERIAL_CONFIGURATION_DEF(num) \
+    vm##num.serial_getchar_attributes = num; \
     vm##num.serial_getchar_shmem_size = 0x1000; \
     vm##num.batch_shmem_size = 0x1000; \
 
