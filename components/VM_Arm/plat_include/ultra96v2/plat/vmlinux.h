@@ -7,7 +7,7 @@
 
 #pragma once
 
-#define GIC_NODE_PATH "/amba_apu@0/interrupt-controller@f9010000"
+#define GIC_NODE_PATH "/axi/interrupt-controller@f9010000"
 
 static const int linux_pt_irqs[] = {};
 
