@@ -47,11 +47,20 @@
 #define DEF_KERNELARMPLATFORM_EXYNOS5410
 #endif
 
+#if VMMAPGIC
+#define DEF_VMMAPGIC \
+    dataport Buf gic_vcpu; \
+
+#else
+#define DEF_VMMAPGIC
+#endif
+
 #define VM_INIT_DEF() \
     control; \
     uses FileServerInterface fs; \
     DEF_TK1DEVICEFWD \
     DEF_KERNELARMPLATFORM_EXYNOS5410 \
+    DEF_VMMAPGIC \
     maybe consumes restart restart_event; \
     has semaphore vm_sem; \
     maybe uses Batch batch; \
@@ -129,6 +138,7 @@
     fserv.heap_size = 0x30000; \
 
 #define VM_CONFIGURATION_DEF(num) \
+    vm##num.id = num; \
     vm##num.fs_shmem_size = 0x100000; \
     vm##num.global_endpoint_base = 1 << 27; \
     vm##num.asid_pool = true; \
@@ -150,6 +160,7 @@
 
 #define PER_VM_VIRTUAL_SERIAL_CONNECTIONS_DEF(num) \
     connection seL4SerialServer serial_vm##num(from vm##num.batch, to serial.processed_batch); \
+    connection seL4SerialServer serial_guest_vm##num(from vm##num.guest_putchar, to serial.raw_putchar); \
     connection seL4SerialServer serial_input_vm##num(from vm##num.serial_getchar, to serial.getchar);
 
 #define VM_VIRTUAL_SERIAL_COMPOSITION_DEF(vm_ids...) \
@@ -168,4 +179,3 @@
 #define VM_VIRTUAL_SERIAL_CONFIGURATION_DEF(vm_ids...) \
     VM_VIRTUAL_SERIAL_GENERAL_CONFIGURATION_DEF() \
     __CALL(PER_VM_VIRTUAL_SERIAL_CONFIGURATION_DEF, vm_ids) \
-
