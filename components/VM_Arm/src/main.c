@@ -91,6 +91,9 @@ int NUM_VCPUS = 1;
 #define seL4_DebugHalt() do{ printf("Halting...\n"); while(1); } while(0)
 #endif
 
+#define NUM_PPI 32
+#define IRQ_IS_PPI(irq) ((irq) < NUM_PPI)
+
 vka_t _vka;
 simple_t _simple;
 vspace_t _vspace;
@@ -715,7 +718,7 @@ static int install_vm_devices(vm_t *vm, const vm_config_t *vm_config)
     int max_vmm_modules = (int)(__stop__vmm_module - __start__vmm_module);
     int num_vmm_modules = 0;
     for (vmm_module_t *i = __start__vmm_module; i < __stop__vmm_module; i++) {
-        ZF_LOGE("module name: %s", i->name);
+        ZF_LOGI("module name: %s", i->name);
         i->init_module(vm, i->cookie);
         num_vmm_modules++;
     }
@@ -1289,7 +1292,7 @@ static int main_continued(void)
     }
 
     vm_vcpu_t *vm_vcpu = vm.vcpus[BOOT_VCPU];
-    err = vm_assign_vcpu_target(vm_vcpu, 0);
+    err = vm_assign_vcpu_target(vm_vcpu, get_instance_affinity());
     if (err) {
         return -1;
     }

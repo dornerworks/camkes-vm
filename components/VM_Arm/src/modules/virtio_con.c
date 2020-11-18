@@ -48,6 +48,8 @@
 /* Number of ports is the number of crossvm connections plus hvc0 */
 #define NUM_PORTS (ARRAY_SIZE(serial_layout) + 1)
 
+#include "serial_interface.h"
+
 static virtio_con_t *virtio_con = NULL;
 extern vmm_pci_space_t *pci;
 extern vmm_io_port_list_t *io_ports;

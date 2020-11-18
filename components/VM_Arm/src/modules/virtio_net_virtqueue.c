@@ -19,6 +19,8 @@
 #include <camkes/virtqueue.h>
 #include <virtioarm/virtio_net.h>
 
+#include "virtio_net_interface.h"
+
 static virtio_net_t *virtio_net = NULL;
 static vswitch_t virtio_vswitch;
 
