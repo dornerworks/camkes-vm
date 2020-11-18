@@ -85,6 +85,8 @@ int NUM_VCPUS = 1;
 
 #define DMA_VSTART  0x40000000
 
+#define DEFAULT_BOOT_CORE 0
+
 #ifndef DEBUG_BUILD
 #define seL4_DebugHalt() do{ printf("Halting...\n"); while(1); } while(0)
 #endif
@@ -351,6 +353,18 @@ static int vm_new_io_mapper(simple_t simple, vspace_t vspace, vka_t vka, ps_io_m
 static seL4_Error vm_simple_get_irq(void *data, int irq, seL4_CNode cnode, seL4_Word index, uint8_t depth)
 {
     seL4_Error res;
+
+#if CONFIG_MAX_NUM_NODES > 1
+    /* PPIs have been setup by the capDL loader, running on the boot core.
+     * Since PPIs exist on every core, we need to ensure the IRQ is active on our core
+     */
+    if (IRQ_IS_PPI(irq) && (get_instance_affinity() != DEFAULT_BOOT_CORE)) {
+        res = seL4_IRQControl_Get(simple_get_init_cap(&_simple, seL4_CapIRQControl),
+                                  irq, cnode, index, depth);
+        return res;
+    }
+#endif
+
     res = original_simple_get_irq_fn(_simple.data, irq, cnode, index, depth);
     if (res == seL4_NoError) {
         return res;
@@ -1165,6 +1179,8 @@ static int main_continued(void)
     vm_t vm;
     int err;
 
+    set_putchar(guest_putchar_putchar);
+
     /* setup for restart with a setjmp */
     while (setjmp(restart_jmp_buf) != 0) {
         err = vmm_process_reboot_callbacks(&vm, &reboot_hooks_list);
@@ -1206,8 +1222,10 @@ static int main_continued(void)
     err = vmm_init(&vm_config);
     assert(!err);
 
+    unsigned int id = get_instance_id();
+
     /* Create the VM */
-    err = vm_init(&vm, &_vka, &_simple, _vspace, &_io_ops, _fault_endpoint, get_instance_name());
+    err = vm_init(&vm, &_vka, &_simple, _vspace, &_io_ops, _fault_endpoint, get_instance_name(), id);
     assert(!err);
     err = vm_register_unhandled_mem_fault_callback(&vm, unhandled_mem_fault_callback, NULL);
     assert(!err);

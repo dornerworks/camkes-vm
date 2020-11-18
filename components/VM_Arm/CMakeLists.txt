@@ -147,6 +147,15 @@ config_choice(
     "2022_1;VmZynqmpPetalinux2022_1;ZYNQMP_PETALINUX_2022_1;KernelPlatformZynqmp"
 )
 
+config_option(
+    VmMapGic
+    VM_MAP_GIC
+    "Map the GIC VCPU interface using a hardware component. This allows the register to be shared between \
+     multiple VMMs"
+    DEFAULT
+    OFF
+)
+
 add_config_library(arm_vm "${configure_string}")
 
 DeclareCAmkESARMVM(VM)
