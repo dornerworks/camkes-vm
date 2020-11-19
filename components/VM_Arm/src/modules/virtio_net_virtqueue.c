@@ -21,6 +21,10 @@
 
 #include "virtio_net_interface.h"
 
+static void virtio_net_notify_free_send(vswitch_node_t *node);
+static int tx_virtqueue_forward(char *eth_buffer, size_t length, virtio_net_t *virtio_net);
+static int virtio_net_notify_handle_recv(void);
+
 static virtio_net_t *virtio_net = NULL;
 static vswitch_t virtio_vswitch;
 
@@ -46,8 +50,24 @@ static int tx_virtqueue_forward(char *eth_buffer, size_t length, virtio_net_t *v
     /* The dest MAC addr is the first member of an ethernet frame. */
     destaddr = (struct ether_addr *)eth_buffer;
 
-    destnode_n_idxs = virtio_vswitch.n_connected;
-    destnode_start_idx = 0;
+    /* Set up the bounds of the loop below that copies the frames into the destination Guest's virtqueue. */
+    if (mac802_addr_eq_bcast(destaddr)) {
+        /* Send to all nodes on the VLAN if destaddr is bcast addr. */
+        destnode_n_idxs = virtio_vswitch.n_connected;
+        destnode_start_idx = 0;
+    } else if (mac802_addr_eq_ipv6_mcast(destaddr)) {
+        // Do nothing and return
+        return 0;
+    } else {
+        /* Send only to the target node */
+        destnode_n_idxs = 1;
+        destnode_start_idx = vswitch_get_destnode_index_by_macaddr(&virtio_vswitch, destaddr);
+        if (destnode_start_idx < 0) {
+            ZF_LOGW("Unreachable dest macaddr " PR_MAC802_ADDR ". Dropping frame.", PR_MAC802_ADDR_ARGS(destaddr));
+            return -1;
+        }
+    }
+
     for (int i = destnode_start_idx; i < destnode_start_idx + destnode_n_idxs; i++) {
         vswitch_node_t *destnode;
         destnode = vswitch_get_destnode_by_index(&virtio_vswitch, i);
@@ -72,7 +92,7 @@ static int tx_virtqueue_forward(char *eth_buffer, size_t length, virtio_net_t *v
 static void virtio_net_notify_free_send(vswitch_node_t *node)
 {
     void *buf = NULL;
-    unsigned int buf_size = 0;
+    uint32_t buf_size = 0;
     uint32_t wr_len = 0;
     vq_flags_t flag;
     virtqueue_ring_object_t handle;
@@ -114,10 +134,12 @@ static int virtio_net_notify_recv(vswitch_node_t *node)
 static int virtio_net_notify(vm_t *vmm, void *cookie)
 {
     for (int i = 0; i < VSWITCH_NUM_NODES; i++) {
-        if (virtio_vswitch.nodes[i].virtqueues.recv_queue && VQ_DEV_POLL(virtio_vswitch.nodes[i].virtqueues.recv_queue)) {
+        if (virtio_vswitch.nodes[i].virtqueues.recv_queue &&
+            VQ_DEV_POLL(virtio_vswitch.nodes[i].virtqueues.recv_queue)) {
             virtio_net_notify_recv(&virtio_vswitch.nodes[i]);
         }
-        if (virtio_vswitch.nodes[i].virtqueues.send_queue && VQ_DRV_POLL(virtio_vswitch.nodes[i].virtqueues.send_queue)) {
+        if (virtio_vswitch.nodes[i].virtqueues.send_queue &&
+            VQ_DRV_POLL(virtio_vswitch.nodes[i].virtqueues.send_queue)) {
             virtio_net_notify_free_send(&virtio_vswitch.nodes[i]);
         }
     }
@@ -157,14 +179,30 @@ void make_virtqueue_virtio_net(vm_t *vm, void *cookie)
         }
 
         /* Initialise recv virtqueue */
-        err = camkes_virtqueue_device_init_with_recv(vq_recv, mac_mapping.recv_id, &recv_notif, &recv_badge);
-        ZF_LOGF_IF(err, "Unable to initialise recv virtqueue");
+        err = camkes_virtqueue_device_init_with_recv(vq_recv, mac_mapping.recv_id,
+                                                     &recv_notif, &recv_badge);
+        if (err) {
+            // TODO: make the VMM smarter about initializing virtio-net. It should only attempt if it
+            //       is configured to have a virtio-net device. Currently it attempts depending on the
+            //       global (cross-vm) define CONFIG_VM_PCI_SUPPORT.
+            ZF_LOGW("Unable to initialise recv virtqueue for VM %d (%s)", vm->vm_id, vm->vm_name);
+            ZF_LOGW("Note: this is only an error if this VM is configured to have a virtio-net device");
+            virtio_net = NULL;
+            return;
+        }
         err = register_async_event_handler(recv_badge, virtio_net_notify, NULL);
         ZF_LOGF_IF(err, "Failed to register_async_event_handler for recv channel on MAC address: %s", mac_mapping.mac_addr);
 
         /* Initialise send virtqueue */
-        err = camkes_virtqueue_driver_init_with_recv(vq_send, mac_mapping.send_id, &recv_notif, &recv_badge);
-        ZF_LOGF_IF(err, "Unable to initialise send virtqueue");
+        err = camkes_virtqueue_driver_init_with_recv(vq_send, mac_mapping.send_id,
+                                                     &recv_notif, &recv_badge);
+        if (err) {
+            ZF_LOGW("Unable to initialise send virtqueue for VM %d (%s)", vm->vm_id, vm->vm_name);
+            ZF_LOGW("Note: this is only an error if this VM is configured to have a virtio-net device");
+            virtio_net = NULL;
+            return;
+        }
+
         err = register_async_event_handler(recv_badge, virtio_net_notify, NULL);
         ZF_LOGF_IF(err, "Failed to register_async_event_handler for send channel on MAC address: %s", mac_mapping.mac_addr);
 
@@ -175,4 +213,4 @@ void make_virtqueue_virtio_net(vm_t *vm, void *cookie)
     }
 }
 
-DEFINE_MODULE(virtio_net, NULL, make_virtqueue_virtio_net)
+DEFINE_MODULE(virtio_net_virtqueue, NULL, make_virtqueue_virtio_net)

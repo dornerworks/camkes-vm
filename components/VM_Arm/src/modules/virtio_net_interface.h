@@ -10,4 +10,4 @@
  * @TAG(DATA61_BSD)
  */
 
-void virtio_net_notify(vm_t *vm);
+static int virtio_net_notify(vm_t *vm, void *cookie);
