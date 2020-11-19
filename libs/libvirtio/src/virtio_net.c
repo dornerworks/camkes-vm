@@ -73,7 +73,7 @@ static int emul_raw_tx(struct eth_driver *driver, unsigned int num, uintptr_t *p
         if (virtio_cookie->callbacks.tx_callback) {
             err = virtio_cookie->callbacks.tx_callback(ethbuffer, len[i], virtio_cookie->virtio_net);
             if (err) {
-                ZF_LOGE("TX callback failed");
+                ZF_LOGW("TX callback failed");
                 complete = false;
                 break;
             }
