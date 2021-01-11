@@ -1291,8 +1291,19 @@ static int main_continued(void)
         }
     }
 
+    int pcpu_assignments = 0;
+    if (get_instance_size_pcpus_list() < NUM_VCPUS) {
+        pcpu_assignments = get_instance_size_pcpus_list();
+    } else {
+        pcpu_assignments = NUM_VCPUS;
+    }
+    /* Assign vcpus to explicit pcpus */
+    for (int j = 0; j < pcpu_assignments; j++) {
+        vm.vcpus[j]->target_cpu = pcpus[j];
+    }
+
     vm_vcpu_t *vm_vcpu = vm.vcpus[BOOT_VCPU];
-    err = vm_assign_vcpu_target(vm_vcpu, get_instance_affinity());
+    err = vm_assign_vcpu_target(vm_vcpu, vm_vcpu->target_cpu);
     if (err) {
         return -1;
     }
