@@ -1213,7 +1213,9 @@ static int main_continued(void)
     vm_t vm;
     int err;
 
-    set_putchar(guest_putchar_putchar);
+    if (putchar_putchar) {
+        set_putchar(putchar_putchar);
+    }
 
     /* setup for restart with a setjmp */
     while (setjmp(restart_jmp_buf) != 0) {
