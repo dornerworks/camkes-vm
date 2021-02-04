@@ -64,6 +64,7 @@
     maybe consumes restart restart_event; \
     has semaphore vm_sem; \
     maybe uses Batch batch; \
+    maybe uses PutChar putchar; \
     maybe uses PutChar guest_putchar; \
     maybe uses GetChar serial_getchar; \
     maybe uses VirtQueueDev recv; \
@@ -161,25 +162,38 @@
     component TimeServer time_server; \
     connection seL4TimeServer serialserver_timer(from serial.timeout, to time_server.the_timer); \
 
+#define PER_VMM_VIRTUAL_SERIAL_CONNECTIONS_DEF(num) \
+    connection seL4SerialServer serial_vmm_batch##num(from vm##num.batch, to serial.processed_batch); \
+    connection seL4SerialServer serial_vmm##num(from vm##num.putchar, to serial.processed_putchar);
+
 #define PER_VM_VIRTUAL_SERIAL_CONNECTIONS_DEF(num) \
-    connection seL4SerialServer serial_vm##num(from vm##num.batch, to serial.processed_batch); \
     connection seL4SerialServer serial_guest_vm##num(from vm##num.guest_putchar, to serial.raw_putchar); \
     connection seL4SerialServer serial_input_vm##num(from vm##num.serial_getchar, to serial.getchar);
 
 #define VM_VIRTUAL_SERIAL_COMPOSITION_DEF(vm_ids...) \
-    VM_VIRTUAL_SERIAL_COMPONENTS_DEF() \
     __CALL(PER_VM_VIRTUAL_SERIAL_CONNECTIONS_DEF, vm_ids) \
 
-#define VM_VIRTUAL_SERIAL_GENERAL_CONFIGURATION_DEF() \
+#define VMM_VIRTUAL_SERIAL_COMPOSITION_DEF(vmm_ids...) \
+    VM_VIRTUAL_SERIAL_COMPONENTS_DEF() \
+    __CALL(PER_VMM_VIRTUAL_SERIAL_CONNECTIONS_DEF, vmm_ids) \
+
+#define VMM_VIRTUAL_SERIAL_GENERAL_CONFIGURATION_DEF() \
     time_server.timers_per_client = 1; \
     time_server.priority = 255; \
     time_server.simple = true;
 
 #define PER_VM_VIRTUAL_SERIAL_CONFIGURATION_DEF(num) \
     vm##num.serial_getchar_attributes = num; \
+    vm##num.guest_putchar_attributes = num; \
     vm##num.serial_getchar_shmem_size = 0x1000; \
+
+#define PER_VMM_VIRTUAL_SERIAL_CONFIGURATION_DEF(num) \
+    vm##num.putchar_attributes = num; \
     vm##num.batch_shmem_size = 0x1000; \
 
 #define VM_VIRTUAL_SERIAL_CONFIGURATION_DEF(vm_ids...) \
-    VM_VIRTUAL_SERIAL_GENERAL_CONFIGURATION_DEF() \
     __CALL(PER_VM_VIRTUAL_SERIAL_CONFIGURATION_DEF, vm_ids) \
+
+#define VMM_VIRTUAL_SERIAL_CONFIGURATION_DEF(vmm_ids...) \
+    VMM_VIRTUAL_SERIAL_GENERAL_CONFIGURATION_DEF() \
+    __CALL(PER_VMM_VIRTUAL_SERIAL_CONFIGURATION_DEF, vmm_ids) \
