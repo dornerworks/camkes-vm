@@ -1303,7 +1303,14 @@ static int main_continued(void)
     }
 
     vm_vcpu_t *vm_vcpu = vm.vcpus[BOOT_VCPU];
-    err = vm_assign_vcpu_target(vm_vcpu, vm_vcpu->target_cpu);
+
+    /* Use affinity as boot core if pcpus are not specified */
+    if (0 == pcpu_assignments) {
+        err = vm_assign_vcpu_target(vm_vcpu, get_instance_affinity());
+    } else {
+        err = vm_assign_vcpu_target(vm_vcpu, vm_vcpu->target_cpu);
+    }
+
     if (err) {
         return -1;
     }
