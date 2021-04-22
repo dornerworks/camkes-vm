@@ -1177,6 +1177,37 @@ int vm_smc_handler(vm_vcpu_t *vcpu, seL4_UserContext *regs)
 }
 #endif
 
+#ifdef CONFIG_KERNEL_MCS
+static int vcpu_configure_sched_context(vm_vcpu_t *vcpu, uint64_t period, uint64_t budget)
+{
+    int err;
+    seL4_Word extra_refills = 0;
+    seL4_Word badge = 0;
+
+    vcpu->tcb.sched_ctrl.cptr = simple_get_sched_ctrl(vcpu->vm->simple, vcpu->target_cpu);
+
+    if (vcpu->tcb.sched_ctrl.cptr == seL4_CapNull) {
+        ZF_LOGE("Sched Ctrl Cap is Null\n");
+        return -1;
+    }
+
+    if (vcpu->tcb.sc.cptr == seL4_CapNull) {
+        ZF_LOGE("Sched Context Cap is Null\n");
+        return -1;
+    }
+
+    err = api_sched_ctrl_configure(vcpu->tcb.sched_ctrl.cptr, vcpu->tcb.sc.cptr, budget,
+                                   period, extra_refills, badge);
+    assert(!err);
+
+    err = api_tcb_set_sched_params(vcpu->tcb.tcb.cptr, simple_get_tcb(vcpu->vm->simple), vcpu->tcb.priority,
+                                   vcpu->tcb.priority, vcpu->tcb.sc.cptr, vcpu->vcpu_arch.fault_ep);
+    assert(!err);
+
+    return err;
+}
+#endif
+
 static int main_continued(void)
 {
     vm_t vm;
@@ -1314,6 +1345,13 @@ static int main_continued(void)
     if (err) {
         return -1;
     }
+
+#ifdef CONFIG_KERNEL_MCS
+    for (int l = 0; l < NUM_VCPUS; l++) {
+        err = vcpu_configure_sched_context(vm.vcpus[l], vcpu_periods[l], vcpu_budgets[l]);
+        assert(!err);
+    }
+#endif
 
     for (int k = 0; k < NUM_VCPUS; k++) {
         err = seL4_DomainSet_Set(simple_get_init_cap(&_simple, seL4_CapDomain), get_instance_domain(),
