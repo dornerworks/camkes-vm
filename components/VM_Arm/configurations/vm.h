@@ -75,6 +75,8 @@
     attribute int base_prio; \
     attribute int num_vcpus = 1; \
     attribute int pcpus[] = []; \
+    attribute int vcpu_periods[] = []; \
+    attribute int vcpu_budgets[] = []; \
     attribute int num_extra_frame_caps; \
     attribute int extra_frame_map_address; \
     attribute { \
