@@ -7,6 +7,20 @@
 cmake_minimum_required(VERSION 3.8.2)
 
 set(configure_string "")
+if("${CAmkESVMDestHardware}" STREQUAL "optiplex")
+    list(APPEND configure_string "#define CAMKES_VM_DEST_HW_OPTIPLEX")
+elseif("${CAmkESVMDestHardware}" STREQUAL "klaw")
+    list(APPEND configure_string "#define CAMKES_VM_DEST_HW_KLAW")
+elseif("${CAmkESVMDestHardware}" STREQUAL "qemu")
+    list(APPEND configure_string "#define CAMKES_VM_DEST_HW_QEMU")
+else()
+    message(FATAL_ERROR "No hardware platform set in camkes-vm")
+endif()
+
+if(LibSel4VMMUseHPET)
+    list(APPEND configure_string "#define CONFIG_VMM_USE_HPET")
+endif()
+
 
 config_option(
     CAmkESVMGuestDMAIommu

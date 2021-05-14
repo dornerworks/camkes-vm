@@ -45,6 +45,7 @@
     /* File Server */ \
     uses FileServerInterface fs; \
     uses GetChar serial_getchar; \
+    has mutex exit; \
     attribute string kernel_cmdline; \
     attribute string kernel_image; \
     attribute string kernel_relocs; \
@@ -54,6 +55,7 @@
     attribute int cnode_size_bits = 21; \
     attribute vswitch_mapping vswitch_layout[] = []; \
     attribute string vswitch_mac_address = ""; \
+    attribute int num_vcpus = 1; \
     /**/
 
 /* VM and per VM componenents */
@@ -116,15 +118,13 @@
 
 #define VM_CONFIGURATION_DEF() \
     fserv.heap_size = 165536; \
-    time_server.timers_per_client = 9; \
+    time_server.timers_per_client = 12; \
     /* Put the entire time server at the highest priority */ \
     time_server.priority = 255; \
     /* The timer server runs better if it can get the true tsc frequency from the kernel */ \
     time_server.simple_extra_bootinfo = ["SEL4_BOOTINFO_HEADER_X86_TSC_FREQ"]; \
     time_server.simple = true; \
-    /* Put the serial interrupt at 200  \
-     * but Leave the rest of the serial at default priority */ \
-    serial.serial_irq_priority = 200; \
+
     /* Now the VMM, guest and everything else should be at \
      * the default priority of 100 */ \
     /**/

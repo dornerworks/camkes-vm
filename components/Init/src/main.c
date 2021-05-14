@@ -40,6 +40,7 @@
 #include <sel4vmmplatsupport/drivers/pci_helper.h>
 #include <sel4vmmplatsupport/drivers/cross_vm_connection.h>
 #include <sel4vmmplatsupport/arch/drivers/vmm_pci_helper.h>
+#include <sel4vmmplatsupport/arch/hpet.h>
 
 #include <sel4vm/arch/vmcall.h>
 
@@ -55,7 +56,7 @@
 #include "virtio_net_vswitch.h"
 
 #define BRK_VIRTUAL_SIZE 400000000
-#define ALLOCMAN_VIRTUAL_SIZE 400000000
+#define ALLOCMAN_VIRTUAL_SIZE 800000000
 #define CROSS_VM_EVENT_IRQ_NUM 12
 #define CROSS_VM_BASE_ADDRESS 0xa0000000
 
@@ -76,7 +77,7 @@ static seL4_CPtr get_async_event_notification()
 void camkes_make_simple(simple_t *simple);
 
 static allocman_t *allocman;
-static char allocator_mempool[8886080];
+static char allocator_mempool[17772160];
 static simple_t camkes_simple;
 static vka_t vka;
 static vspace_t vspace;
@@ -223,6 +224,33 @@ typedef struct memory_range {
     size_t size;
 } memory_range_t;
 
+
+
+#if (defined(CAMKES_VM_DEST_HW_KLAW))
+
+static memory_range_t guest_ram_regions[] = {
+    /* Allocate all the standard low memory areas */
+    {0x500, 0x7c00 - 0x500},
+    {0x7e00, 0x80000 - 0x7e00},
+    {0x80000, 0x9fc00 - 0x80000},
+};
+
+static memory_range_t guest_fake_devices[] = {
+    {0xf0000, 0x10000}, // DMI
+    {0xc0000, 0xc8000 - 0xc0000}, // VIDEO BIOS
+    {0xc8000, 0xe0000 - 0xc8000}, // Mapped hardware and MISC
+    {0xfe000000, 0x11000}, // KLAW page fault during RHEL8 boot
+    {0x8c5b1000, 0x917000}, // KLAW page fault during VGA passthrough
+    {0x8cec8000, 0x437000}, // KLAW memory range needed for USB
+};
+
+/* Memory areas we reserve for anonymous allocations */
+static memory_range_t free_anonymous_regions[] = {
+    {0x10003000, 0x88383000 - 0x10003000},
+    {0x100000000, 0x300000000}
+};
+
+#elif (defined(CAMKES_VM_DEST_HW_OPTIPLEX))
 static memory_range_t guest_ram_regions[] = {
     /* Allocate all the standard low memory areas */
     {0x500, 0x7c00 - 0x500},
@@ -239,7 +267,33 @@ static memory_range_t guest_fake_devices[] = {
 /* Memory areas we reserve for anonymous allocations */
 static memory_range_t free_anonymous_regions[] = {
     {0x10003000, 0xa0000000 - 0x10003000},
+    {0x100000000, 0x180000000},
+    {0x280000000, 0x020000000}
 };
+
+#elif (defined(CAMKES_VM_DEST_HW_QEMU))
+static memory_range_t guest_ram_regions[] = {
+    /* Allocate all the standard low memory areas */
+    {0x500, 0x7c00 - 0x500},
+    {0x7e00, 0x80000 - 0x7e00},
+    {0x80000, 0x9fc00 - 0x80000},
+};
+
+static memory_range_t guest_fake_devices[] = {
+    {0xf0000, 0x10000}, // DMI
+    {0xc0000, 0xc8000 - 0xc0000}, // VIDEO BIOS
+    {0xc8000, 0xe0000 - 0xc8000}, // Mapped hardware and MISC
+};
+
+/* Memory areas we reserve for anonymous allocations */
+static memory_range_t free_anonymous_regions[] = {
+    {0x10003000, 0xa0000000 - 0x10003000},
+    {0x100000000, 0x340000000}
+};
+
+#else
+#error "No Platform Defined for Init Component"
+#endif
 
 typedef struct device_notify {
     uint32_t badge;
@@ -432,6 +486,7 @@ static device_notify_t *device_notify_list = NULL;
 void pit_timer_interrupt(void);
 void rtc_timer_interrupt(uint32_t);
 void serial_timer_interrupt(uint32_t);
+void hpet_timer_interrupt(uint32_t);
 
 static seL4_Word irq_badges[16] = {
     VM_PIC_BADGE_IRQ_0,
@@ -477,6 +532,11 @@ static int handle_async_event(vm_t *vm, seL4_Word badge, UNUSED seL4_MessageInfo
                                  TIMER_MORE_CHARS))) {
                 serial_timer_interrupt(completed);
             }
+#ifdef CONFIG_VMM_USE_HPET
+            if (completed & (BIT(TIMER_HPET0) | BIT(TIMER_HPET1) | BIT(TIMER_HPET2))) {
+                hpet_timer_interrupt(completed);
+            }
+#endif
         }
         if ((badge & serial_getchar_notification_badge()) == serial_getchar_notification_badge()) {
             serial_character_interrupt();
@@ -613,12 +673,29 @@ void make_virtio_net_vswitch(vm_t *vm)
     return make_virtio_net_vswitch_driver(vm, pci, io_ports);
 }
 
+extern const int __attribute__((weak)) num_vcpus;
+
 void *main_continued(void *arg)
 {
     int error;
-    int i;
+    int i, num_vm_vcpus;
     int have_initrd = 0;
     ps_io_port_ops_t pci_io_ops;
+
+    /* If the num_vcpus attribute is set, try to use it */
+    /* The num_vcpus is set by CAmKES and is a const here so the value
+       is copied to a local variable and used here */
+    if (&num_vcpus != NULL) {
+        if (num_vcpus > CONFIG_MAX_NUM_NODES) {
+            ZF_LOGE("Invalid 'num_vcpus' attribute setting: Exceeds maximum number of supported nodes. Capping value to CONFIG_MAX_NUM_NODES (%d)",
+                    CONFIG_MAX_NUM_NODES);
+            num_vm_vcpus = CONFIG_MAX_NUM_NODES;
+        } else if (num_vcpus <= 0) {
+            ZF_LOGE("Invalid 'num_vcpus' attribute setting: Can't have 0 or negative amount of vcpus. Capping value to 1 vcpu (default value)");
+        } else {
+            num_vm_vcpus = num_vcpus;
+        }
+    }
 
     rtc_time_date_t time_date = system_rtc_time_date();
     ZF_LOGI("Starting VM %s at: %04d:%02d:%02d %02d:%02d:%02d\n", get_instance_name(), time_date.year, time_date.month,
@@ -642,6 +719,7 @@ void *main_continued(void *arg)
     /* Construct a new VM */
     ZF_LOGI("VMM init");
     error = vm_init(&vm, &vka, &camkes_simple, vspace, &io_ops, ready_notification_cap, "X86 VM");
+    vm_set_mutex_fns(&vm, &exit_lock, &exit_unlock);
     ZF_LOGF_IF(error, "VMM init failed");
 
 #ifdef CONFIG_CAMKES_VM_GUEST_DMA_IOMMU
@@ -659,9 +737,16 @@ void *main_continued(void *arg)
     }
 #endif
 
-    vm_vcpu_t *vm_vcpu;
-    vm_vcpu = vm_create_vcpu(&vm, 0);
-    assert(vm_vcpu);
+
+    vm_vcpu_t **vm_vcpu= malloc(num_vm_vcpus * sizeof(vm_vcpu_t *));
+    assert(*vm_vcpu);
+
+    for(i = 0; i < num_vm_vcpus; i++) {
+        // 254 is the max priority
+        vm_vcpu[i] = vm_create_vcpu(&vm, 254);
+        seL4_TCB_SetAffinity(vm_vcpu[i]->tcb.tcb.cptr, i);
+        assert(vm_vcpu[i]);
+    }
 
     error = vm_register_notification_callback(&vm, handle_async_event, NULL);
     assert(!error);
@@ -690,6 +775,15 @@ void *main_continued(void *arg)
 
     ZF_LOGI("RTC pre init");
     rtc_pre_init();
+#ifdef CONFIG_VMM_USE_HPET
+    ZF_LOGI("HPET pre init\n");
+    uint64_t tsc_frequency = init_timer_tsc_frequency();
+    hpet_pre_init(tsc_frequency,
+                  TIMER_HPET0,
+                  init_timer_oneshot_relative,
+                  init_timer_stop);
+    vm_create_hpet(&vm);
+#endif
 
     error = vmm_io_port_init(&io_ports, FREE_IOPORT_START);
     if (error) {
@@ -750,9 +844,16 @@ void *main_continued(void *arg)
     while (remaining > 0) {
         size_t allocate = MIN(remaining, MiB_TO_BYTES(512));
         uintptr_t res_addr = vm_ram_register(&vm, allocate);
+        ZF_LOGI("Reserving:  0x%llx.\n\r", res_addr);
         ZF_LOGF_IF(!res_addr, "Failed to allocate %lu bytes of guest ram. Already allocated %lu.",
                    (long)allocate, (long)(MiB_TO_BYTES(guest_ram_mb) - remaining));
         remaining -= allocate;
+
+        vm_mem_t *guest_memory = &vm.mem;
+        for (i = 0; i < guest_memory->num_ram_regions; i++) {
+           ZF_LOGI("Temp RAM Regions are:\n");
+           ZF_LOGI("\t0x%llx - 0x%llx\n", (unsigned long long int)guest_memory->ram_regions[i].start, (unsigned long long int)(guest_memory->ram_regions[i].start + guest_memory->ram_regions[i].size));
+        }
     }
 
     error = vmm_pci_init(&pci);
@@ -826,19 +927,25 @@ void *main_continued(void *arg)
             error = vm_io_port_add_handler(&vm, config_range, config_interface);
             assert(!error);
         } else {
-            error = vm_enable_passthrough_ioport(vm_vcpu, ioport_handlers[i].start_port,
-                                                 ioport_handlers[i].end_port);
-            assert(!error);
+            for(int j = 0; j < num_vm_vcpus; j++) {
+                /* Add any IO ports for every vcpu */
+                error = vm_enable_passthrough_ioport(vm_vcpu[j], ioport_handlers[i].start_port,
+                                                     ioport_handlers[i].end_port);
+                assert(!error);
+            }
         }
     }
-    for (i = 0; i < ioports_num_nonpci_ioports(); i++) {
-        uint16_t start;
-        uint16_t end;
-        const char *desc;
-        seL4_CPtr cap;
-        desc = ioports_get_nonpci_ioport(i, &cap, &start, &end);
-        error = vm_enable_passthrough_ioport(vm_vcpu, start, end);
-        assert(!error);
+
+    for(int j = 0; j < num_vm_vcpus; j++) {
+        for (i = 0; i < ioports_num_nonpci_ioports(); i++) {
+            uint16_t start;
+            uint16_t end;
+            const char *desc;
+            seL4_CPtr cap;
+            desc = ioports_get_nonpci_ioport(i, &cap, &start, &end);
+            error = vm_enable_passthrough_ioport(vm_vcpu[j], start, end);
+            assert(!error);
+        }
     }
     /* config start and end encomposes both addr and data ports */
     vm_ioport_range_t pci_config_range = {X86_IO_PCI_CONFIG_START, X86_IO_PCI_CONFIG_END};
@@ -851,7 +958,7 @@ void *main_continued(void *arg)
     error = vm_ram_find_largest_free_region(&vm, &kernel_load_addr, &kernel_region_size);
     ZF_LOGF_IF(error, "Unable to find ram region for loading kernel image");
     guest_kernel_image_t guest_kernel_image;
-    guest_kernel_image.kernel_image_arch.is_reloc_enabled = true;
+    guest_kernel_image.kernel_image_arch.is_reloc_enabled = !(strcmp(kernel_relocs, "") == 0);
     guest_kernel_image.kernel_image_arch.relocs_file = kernel_relocs;
     error =  vm_load_guest_kernel(&vm, kernel_image, kernel_load_addr, BIT(PAGE_BITS_4M), &guest_kernel_image);
     ZF_LOGF_IF(error, "Failed to load guest kernel file");
@@ -882,12 +989,23 @@ void *main_continued(void *arg)
 
     /* Final VMM setup now that everything is defined and loaded */
     ZF_LOGI("Finalising VMM");
-    error = vmm_plat_init_guest_thread_state(vm_vcpu,
+    error = vmm_plat_init_guest_thread_state(vm_vcpu[BOOT_VCPU],
                                              guest_kernel_image.kernel_image_arch.entry,
                                              guest_boot_info_structure_addr);
     ZF_LOGF_IF(error, "Failed to finalise VMM");
 
-    vcpu_start(vm_vcpu);
+    /* Start boot core */
+    vcpu_start(vm_vcpu[BOOT_VCPU]);
+
+    /* Start secondary core(s) */
+    for(i = 0; i < num_vm_vcpus; i++)
+    {
+        if (i != BOOT_VCPU)
+        {
+            vm_assign_vcpu_target(vm_vcpu[i], i);
+            seL4_TCB_Resume(vm_vcpu[i]->tcb.tcb.cptr);
+        }
+    }
 
     /* Now go run the event loop */
     vm_run(&vm);
