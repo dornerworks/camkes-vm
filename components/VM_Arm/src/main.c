@@ -1362,11 +1362,12 @@ static int main_continued(void)
     }
 #endif
 
-    for (int k = 0; k < NUM_VCPUS; k++) {
-        err = seL4_DomainSet_Set(simple_get_init_cap(&_simple, seL4_CapDomain), get_instance_domain(),
-                                 vm.vcpus[k]->tcb.tcb.cptr);
-        assert(!err);
-    }
+    /* domain scheduler not used? crashes vms when vswitch toggle rpccall is connected */
+    // for (int k = 0; k < NUM_VCPUS; k++) {
+    //     err = seL4_DomainSet_Set(simple_get_init_cap(&_simple, seL4_CapDomain), get_instance_domain(),
+    //                              vm.vcpus[k]->tcb.tcb.cptr);
+    //     assert(!err);
+    // }*/
 
     /* Route IRQs */
     err = route_irqs(vm_vcpu, _irq_server);

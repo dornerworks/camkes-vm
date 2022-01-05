@@ -31,6 +31,16 @@ static vswitch_t virtio_vswitch;
 extern vmm_pci_space_t *pci;
 extern vmm_io_port_list_t *io_ports;
 
+void toggle_on(void)
+{
+    virtio_vswitch.n_connected++;
+}
+
+void toggle_off(void)
+{
+    virtio_vswitch.n_connected--;
+}
+
 void self_mac(uint8_t *mac)
 {
     struct ether_addr res;
@@ -145,7 +155,7 @@ static int virtio_net_notify_recv(vswitch_node_t *node)
 
 static int virtio_net_notify(vm_t *vmm, void *cookie)
 {
-    for (int i = 0; i < VSWITCH_NUM_NODES; i++) {
+    for (int i = 0; i < virtio_vswitch.n_connected; i++) {
         if (virtio_vswitch.nodes[i].virtqueues.recv_queue &&
             VQ_DEV_POLL(virtio_vswitch.nodes[i].virtqueues.recv_queue)) {
             virtio_vswitch.nodes[i].virtqueues.recv_queue->lock();
