@@ -32,6 +32,7 @@
 #include <sel4platsupport/io.h>
 
 #include <sel4vm/guest_vm.h>
+#include <sel4vm/guest_vm_util.h>
 #include <sel4vm/boot.h>
 #include <sel4vm/guest_ram.h>
 #include <sel4vm/guest_iospace.h>
@@ -138,6 +139,17 @@ int camkes_get_sid_at_index(int index);
 #ifdef CONFIG_ALLOW_SMC_CALLS
 seL4_CPtr camkes_get_smc_cap(seL4_Word smc_call);
 #endif
+
+seL4_CPtr vm_tcb;
+void timeout_suspend(void)
+{
+    seL4_TCB_Suspend(vm_tcb);
+}
+
+void timeout_resume(void)
+{
+    seL4_TCB_Resume(vm_tcb);
+}
 
 int get_crossvm_irq_num(void)
 {
@@ -1330,6 +1342,7 @@ static int main_continued(void)
             return -1;
         }
     }
+    vm_tcb = vm.vcpus[BOOT_VCPU]->tcb.tcb.cptr;
 
     int pcpu_assignments = 0;
     if (get_instance_size_pcpus_list() < NUM_VCPUS) {
