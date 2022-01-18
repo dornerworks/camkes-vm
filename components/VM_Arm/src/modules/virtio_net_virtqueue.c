@@ -172,6 +172,15 @@ static int virtio_net_notify(vm_t *vmm, void *cookie)
     return 0;
 }
 
+void reset_virtqueue_virtio_net(vm_t *vm)
+{
+    virtio_net_callbacks_t callbacks;
+    callbacks.tx_callback = tx_virtqueue_forward;
+    callbacks.irq_callback = NULL;
+    callbacks.get_mac_addr_callback = self_mac;
+    virtio_net = virtio_net_reset(vm, &callbacks, virtio_net, pci, io_ports);
+}
+
 void make_virtqueue_virtio_net(vm_t *vm, void *cookie)
 {
     int err;

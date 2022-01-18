@@ -137,3 +137,29 @@ virtio_net_t *virtio_net_init(vm_t *vm, virtio_net_callbacks_t *callbacks,
     virtio_net->emul_driver->eth_data = (void *)driver_cookie;
     return virtio_net;
 }
+
+virtio_net_t *virtio_net_reset(vm_t *vm, virtio_net_callbacks_t *callbacks, virtio_net_t *virtio_net,
+                     vmm_pci_space_t *pci, vmm_io_port_list_t *io_ports)
+{
+    get_mac_addr_callback = callbacks->get_mac_addr_callback;
+
+    struct raw_iface_funcs backend = virtio_net_default_backend();
+    backend.raw_tx = emul_raw_tx;
+    backend.low_level_init = emul_low_level_init;
+    backend.raw_handleIRQ = emul_raw_handle_irq;
+
+    virtio_net_cookie_t *driver_cookie = virtio_net->emul_driver->eth_data;
+    memset(driver_cookie, 0, sizeof(virtio_net_cookie_t));
+
+    common_reset_virtio_net(vm, virtio_net);
+
+    driver_cookie->virtio_net = virtio_net;
+    driver_cookie->vm = vm;
+    int err =  vm_register_irq(vm->vcpus[BOOT_VCPU], VIRTIO_NET_PLAT_INTERRUPT_LINE, &virtio_net_ack, NULL);
+    if (callbacks) {
+        driver_cookie->callbacks.tx_callback = callbacks->tx_callback;
+        driver_cookie->callbacks.irq_callback = callbacks->irq_callback;
+    }
+    virtio_net->emul_driver->eth_data = (void *)driver_cookie;
+    return virtio_net;
+}
