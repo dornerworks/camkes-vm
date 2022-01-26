@@ -157,6 +157,12 @@ void timeout_restart(void)
     restart = 1;
 }
 
+seL4_CPtr vmm_tcb;
+void timeout_kill(void)
+{
+    seL4_TCB_Suspend(vmm_tcb);
+}
+
 int get_crossvm_irq_num(void)
 {
     return free_plat_interrupts[0];
@@ -514,6 +520,7 @@ static int vmm_init(const vm_config_t *vm_config)
     };
 
     camkes_make_simple(simple);
+    vmm_tcb = camkes_get_tls()->tcb_cap;
     original_simple_get_irq_fn = simple->arch_simple.irq;
     simple->arch_simple.irq = &vm_simple_get_irq;
 
