@@ -596,7 +596,7 @@ static int vmm_init(const vm_config_t *vm_config)
     for (int i = 0; i < num_irq_threads; i++) {
         /* Create new IRQ server threads and have them allocate notifications for us */
         thread_id_t t_id = irq_server_thread_new(_irq_server, seL4_CapNull,
-                                                 0, -1);
+                                                 0, -1, pcpus[BOOT_VCPU]);
         assert(t_id >= 0);
     }
 
