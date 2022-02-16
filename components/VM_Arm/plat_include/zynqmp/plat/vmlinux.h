@@ -23,10 +23,29 @@ static const int free_plat_interrupts[] =  { -1 };
 
 static const char *plat_keep_devices[] = {
     "/timer",
+    "/dcc",
+    "/pmu",
+    "/psci",
+    "/axi",
+    "/amba_pl@0",
+    "/clk100",
+    "/clk125",
+    "/clk200",
+    "/clk250",
+    "/clk300",
+    "/clk600",
+    "/clock0",
+    "/clock1",
+    "/dpdma_clk",
+    "/drm_clock",
+    "/aliases",
 };
 static const char *plat_keep_device_and_disable[] = {};
 static const char *plat_keep_device_and_subtree[] = {
     GIC_NODE_PATH,
+    "/amba_apu@0",
+    "/gpio-keys",
+    "/leds",
 };
 static const char *plat_keep_device_and_subtree_and_disable[] = {};
 static const char *plat_linux_bootcmdline = "";
