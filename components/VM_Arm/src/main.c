@@ -68,6 +68,8 @@
 #include <fdtgen.h>
 #include "fdt_manipulation.h"
 
+#include "guest_reset.h"
+
 /* Do - Include prototypes to suppress compiler warnings
  * TODO: Add these to a template header */
 seL4_CPtr notification_ready_notification(void);
