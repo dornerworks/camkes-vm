@@ -1433,6 +1433,8 @@ static int main_continued(void)
         if (restart) {
             seL4_TCB_Suspend(vm_tcb);
 
+            reset_ram(&vm);
+
             err = vm_reset(&vm);
             if (err) {
                 ZF_LOGE("failed to reset vm");

@@ -12,6 +12,11 @@
 #include <sel4vmmplatsupport/guest_memory_util.h>
 #include <vmlinux.h>
 
+void reset_ram(vm_t *vm)
+{
+    vm_ram_reset(vm);
+}
+
 void WEAK init_ram_module(vm_t *vm, void *cookie)
 {
     int err = vm_ram_register_at(vm,
