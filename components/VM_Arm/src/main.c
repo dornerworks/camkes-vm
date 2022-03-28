@@ -153,12 +153,6 @@ void timeout_resume(void)
     seL4_TCB_Resume(vm_tcb);
 }
 
-int restart = 0;
-void timeout_restart(void)
-{
-    restart = 1;
-}
-
 seL4_CPtr vmm_tcb;
 void timeout_kill(void)
 {
@@ -1428,39 +1422,42 @@ static int main_continued(void)
     while (1) {
         err = vm_run(&vm);
         if (err) {
-            ZF_LOGE("failed to re-run vm");
+            ZF_LOGE("failed to run vm");
             seL4_DebugHalt();
             return -1;
         }
-        if (restart) {
-            seL4_TCB_Suspend(vm_tcb);
 
-            reset_ram(&vm);
+        /* if vm_run() returns, restart */
+        err = vcpu_stop(vm_vcpu);
+        if (err) {
+            ZF_LOGE("failed to stop vcpu");
+            seL4_DebugHalt();
+            return -1;
+        }
 
-            err = vm_reset(&vm);
-            if (err) {
-                ZF_LOGE("failed to reset vm");
-                seL4_DebugHalt();
-                return -1;
-            }
+        reset_ram(&vm);
 
-            printf("Reloading VM\n");
-            reset_virtqueue_virtio_net(&vm);
-            err = load_vm_images(&vm, &vm_config);
-            if (err) {
-                ZF_LOGE("failed to reload vm");
-                seL4_DebugHalt();
-                return -1;
-            }
+        err = vm_reset(&vm);
+        if (err) {
+            ZF_LOGE("failed to reset vm");
+            seL4_DebugHalt();
+            return -1;
+        }
 
-            err = vcpu_start(vm_vcpu);
-            if (err) {
-                ZF_LOGE("failed to restart vcpu");
-                seL4_DebugHalt();
-                return -1;
-            }
+        printf("Reloading VM\n");
+        reset_virtqueue_virtio_net(&vm);
+        err = load_vm_images(&vm, &vm_config);
+        if (err) {
+            ZF_LOGE("failed to reload vm");
+            seL4_DebugHalt();
+            return -1;
+        }
 
-            restart = 0;
+        err = vcpu_start(vm_vcpu);
+        if (err) {
+            ZF_LOGE("failed to restart vcpu");
+            seL4_DebugHalt();
+            return -1;
         }
     }
 
