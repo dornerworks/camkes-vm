@@ -1445,7 +1445,9 @@ static int main_continued(void)
         }
 
         printf("Reloading VM\n");
+#ifdef CONFIG_VM_VIRTIO_NET_VIRTQUEUE
         reset_virtqueue_virtio_net(&vm);
+#endif
         err = load_vm_images(&vm, &vm_config);
         if (err) {
             ZF_LOGE("failed to reload vm");
