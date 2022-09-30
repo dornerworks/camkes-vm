@@ -78,12 +78,17 @@ static int tx_virtqueue_forward(char *eth_buffer, size_t length, virtio_net_t *v
             continue;
         }
 
+        destnode->virtqueues.send_queue->lock();
+
         if (camkes_virtqueue_driver_scatter_send_buffer(destnode->virtqueues.send_queue, (void *)eth_buffer, length) < 0) {
             ZF_LOGE("Unknown error while enqueuing available buffer for dest "
                     PR_MAC802_ADDR ".",
                     PR_MAC802_ADDR_ARGS(destaddr));
+            destnode->virtqueues.send_queue->unlock();
+            destnode->virtqueues.send_queue->notify();
             continue;
         }
+        destnode->virtqueues.send_queue->unlock();
         destnode->virtqueues.send_queue->notify();
     }
     return 0;
@@ -136,11 +141,15 @@ static int virtio_net_notify(vm_t *vmm, void *cookie)
     for (int i = 0; i < VSWITCH_NUM_NODES; i++) {
         if (virtio_vswitch.nodes[i].virtqueues.recv_queue &&
             VQ_DEV_POLL(virtio_vswitch.nodes[i].virtqueues.recv_queue)) {
+            virtio_vswitch.nodes[i].virtqueues.recv_queue->lock();
             virtio_net_notify_recv(&virtio_vswitch.nodes[i]);
+            virtio_vswitch.nodes[i].virtqueues.recv_queue->unlock();
         }
         if (virtio_vswitch.nodes[i].virtqueues.send_queue &&
             VQ_DRV_POLL(virtio_vswitch.nodes[i].virtqueues.send_queue)) {
+            virtio_vswitch.nodes[i].virtqueues.send_queue->lock();
             virtio_net_notify_free_send(&virtio_vswitch.nodes[i]);
+            virtio_vswitch.nodes[i].virtqueues.send_queue->unlock();
         }
     }
     return 0;
