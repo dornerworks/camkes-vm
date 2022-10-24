@@ -47,6 +47,12 @@ static int tx_virtqueue_forward(char *eth_buffer, size_t length, virtio_net_t *v
     struct ether_addr *destaddr;
     int err, destnode_start_idx, destnode_n_idxs;
 
+    /* Silently drop too large packets */
+    if (length > MAX_MTU) {
+        ZF_LOGE("Tried to send packet that's too big (%d)", length);
+        return 0;
+    }
+
     /* The dest MAC addr is the first member of an ethernet frame. */
     destaddr = (struct ether_addr *)eth_buffer;
 
@@ -63,8 +69,8 @@ static int tx_virtqueue_forward(char *eth_buffer, size_t length, virtio_net_t *v
         destnode_n_idxs = 1;
         destnode_start_idx = vswitch_get_destnode_index_by_macaddr(&virtio_vswitch, destaddr);
         if (destnode_start_idx < 0) {
-            ZF_LOGW("Unreachable dest macaddr " PR_MAC802_ADDR ". Dropping frame.", PR_MAC802_ADDR_ARGS(destaddr));
-            return -1;
+            ZF_LOGE("Unreachable dest macaddr " PR_MAC802_ADDR ". Dropping frame.", PR_MAC802_ADDR_ARGS(destaddr));
+            return 0;
         }
     }
 
@@ -111,29 +117,30 @@ static void virtio_net_notify_free_send(vswitch_node_t *node)
 
 static int virtio_net_notify_recv(vswitch_node_t *node)
 {
-    int err;
-    struct ether_addr myaddr;
-    void *buf = NULL;
-    size_t buf_size = 0;
-    vq_flags_t flag;
     virtqueue_ring_object_t handle;
 
     while (virtqueue_get_available_buf(node->virtqueues.recv_queue, &handle)) {
-        char emul_buf[MAX_MTU] = {0};
-        size_t len = virtqueue_scattered_available_size(node->virtqueues.recv_queue, &handle);
-        int enqueue_res = 0;
-        if (camkes_virtqueue_device_gather_copy_buffer(node->virtqueues.recv_queue, &handle, (void *)emul_buf, len) < 0) {
-            ZF_LOGW("Dropping frame for " PR_MAC802_ADDR ": Can't gather vq buffer.",
-                    PR_MAC802_ADDR_ARGS(&myaddr));
-            continue;
+        unsigned int len = virtqueue_scattered_available_size(node->virtqueues.recv_queue, &handle);
+
+        void *cookie;
+        void *emul_buf = (void *)virtio_net->emul_driver->i_cb.allocate_rx_buf(virtio_net->emul_driver->cb_cookie,
+                                                                               len, &cookie);
+
+        /* If emul_buf == NULL, this function will simply clear the virtqueue */
+        if (camkes_virtqueue_device_gather_copy_buffer(node->virtqueues.recv_queue, &handle, emul_buf, len) < 0) {
+            if (emul_buf) {
+                struct ether_addr *myaddr = (struct ether_addr *)emul_buf;
+                ZF_LOGE("Dropping frame for " PR_MAC802_ADDR ": Can't gather vq buffer.",
+                        PR_MAC802_ADDR_ARGS(myaddr));
+            }
+            break;
         }
 
-        int err = virtio_net_rx(emul_buf, len, virtio_net);
-        if (err) {
-            ZF_LOGE("Unable to forward received buffer to the guest");
+        if (emul_buf) {
+            virtio_net->emul_driver->i_cb.rx_complete(virtio_net->emul_driver->cb_cookie, 1, &cookie, (unsigned int *)&len);
         }
-        node->virtqueues.recv_queue->notify();
     }
+    node->virtqueues.recv_queue->notify();
 }
 
 static int virtio_net_notify(vm_t *vmm, void *cookie)

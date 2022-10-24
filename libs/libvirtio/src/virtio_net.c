@@ -54,7 +54,6 @@ static void emul_raw_handle_irq(struct eth_driver *driver, int irq)
 
 static int emul_raw_tx(struct eth_driver *driver, unsigned int num, uintptr_t *phys, unsigned int *len, void *cookie)
 {
-    bool complete = true;
     int err;
     virtio_net_cookie_t *virtio_cookie = (virtio_net_cookie_t *)driver->eth_data;
     if (!virtio_cookie) {
@@ -63,24 +62,21 @@ static int emul_raw_tx(struct eth_driver *driver, unsigned int num, uintptr_t *p
     }
 
     for (int i = 0; i < num; i++) {
-        char ethbuffer[MAX_MTU];
-        if (len[i] > MAX_MTU) {
-            ZF_LOGE("TX data exceeds MTU (%d) - truncating remaining data", MAX_MTU);
-            complete = false;
-            break;
-        }
-        memcpy((void *)ethbuffer, (void *)phys[i], len[i]);
         if (virtio_cookie->callbacks.tx_callback) {
-            err = virtio_cookie->callbacks.tx_callback(ethbuffer, len[i], virtio_cookie->virtio_net);
+            err = virtio_cookie->callbacks.tx_callback((char *)phys[i], len[i], virtio_cookie->virtio_net);
             if (err) {
                 ZF_LOGW("TX callback failed");
-                complete = false;
-                break;
+                return ETHIF_TX_FAILED;
             }
         }
     }
 
-    return complete ? ETHIF_TX_COMPLETE : ETHIF_TX_FAILED;
+    return ETHIF_TX_COMPLETE;
+}
+
+void set_cookie(void **cookie, void *vaddr)
+{
+    *cookie = vaddr;
 }
 
 int virtio_net_rx(char *data, size_t length, virtio_net_t *virtio_net)
@@ -88,10 +84,9 @@ int virtio_net_rx(char *data, size_t length, virtio_net_t *virtio_net)
     unsigned int len[1];
     len[0] = length;
     void *cookie;
-    void *emul_buf = (void *)virtio_net->emul_driver->i_cb.allocate_rx_buf(virtio_net->emul_driver->cb_cookie, len[0],
-                                                                           &cookie);
-    if (emul_buf) {
-        memcpy(emul_buf, (void *)data, len[0]);
+
+    if (data) {
+        set_cookie(&cookie, &data);
         virtio_net->emul_driver->i_cb.rx_complete(virtio_net->emul_driver->cb_cookie, 1, &cookie, len);
     }
     return 0;
