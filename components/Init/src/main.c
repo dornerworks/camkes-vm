@@ -659,10 +659,12 @@ void *main_continued(void *arg)
     error = ps_new_stdlib_malloc_ops(&io_ops.malloc_ops);
     ZF_LOGF_IF(error, "malloc ops init failed");
 
+    unsigned int id = get_instance_id();
+
     seL4_CPtr ready_notification_cap = intready_notification();
     /* Construct a new VM */
     ZF_LOGI("VMM init");
-    error = vm_init(&vm, &vka, &camkes_simple, vspace, &io_ops, ready_notification_cap, "X86 VM");
+    error = vm_init(&vm, &vka, &camkes_simple, vspace, &io_ops, ready_notification_cap, "X86 VM", id);
     ZF_LOGF_IF(error, "VMM init failed");
 
 #ifdef CONFIG_CAMKES_VM_GUEST_DMA_IOMMU
