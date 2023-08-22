@@ -633,13 +633,29 @@ ioport_fault_result_t ioport_callback_handler(vm_vcpu_t *vcpu, unsigned int port
     }
     return result;
 }
+extern const int __attribute__((weak)) num_vcpus;
 
 void *main_continued(void *arg)
 {
     int error;
-    int i;
+    int i, num_vm_vcpus;
     int have_initrd = 0;
     ps_io_port_ops_t pci_io_ops;
+
+    /* If the num_vcpus attribute is set, try to use it */
+    /* The num_vcpus is set by CAmKES and is a const here so the value
+       is copied to a local variable and used here */
+    if (&num_vcpus != NULL) {
+        if (num_vcpus > CONFIG_MAX_NUM_NODES) {
+            ZF_LOGE("Invalid 'num_vcpus' attribute setting: Exceeds maximum number of supported nodes. Capping value to CONFIG_MAX_NUM_NODES (%d)",
+                    CONFIG_MAX_NUM_NODES);
+            num_vm_vcpus = CONFIG_MAX_NUM_NODES;
+        } else if (num_vcpus <= 0) {
+            ZF_LOGE("Invalid 'num_vcpus' attribute setting: Can't have 0 or negative amount of vcpus. Capping value to 1 vcpu (default value)");
+        } else {
+            num_vm_vcpus = num_vcpus;
+        }
+    }
 
     rtc_time_date_t time_date = system_rtc_time_date();
     ZF_LOGI("Starting VM %s at: %04d:%02d:%02d %02d:%02d:%02d\n", get_instance_name(), time_date.year, time_date.month,
@@ -664,7 +680,7 @@ void *main_continued(void *arg)
     seL4_CPtr ready_notification_cap = intready_notification();
     /* Construct a new VM */
     ZF_LOGI("VMM init");
-    error = vm_init(&vm, &vka, &camkes_simple, vspace, &io_ops, ready_notification_cap, "X86 VM", id);
+    error = vm_init(&vm, &vka, &camkes_simple, vspace, &io_ops, ready_notification_cap, get_instance_name(), id);
     ZF_LOGF_IF(error, "VMM init failed");
 
 #ifdef CONFIG_CAMKES_VM_GUEST_DMA_IOMMU
@@ -682,9 +698,15 @@ void *main_continued(void *arg)
     }
 #endif
 
-    vm_vcpu_t *vm_vcpu;
-    vm_vcpu = vm_create_vcpu(&vm, 0);
-    assert(vm_vcpu);
+
+    vm_vcpu_t **vm_vcpu = malloc(num_vm_vcpus * sizeof(vm_vcpu_t *));
+    assert(*vm_vcpu);
+
+    for (i = 0; i < num_vm_vcpus; i++) {
+        // 254 is the max priority
+        vm_vcpu[i] = vm_create_vcpu(&vm, 254);
+        assert(vm_vcpu[i]);
+    }
 
     error = vm_register_notification_callback(&vm, handle_async_event, NULL);
     assert(!error);
@@ -860,20 +882,27 @@ void *main_continued(void *arg)
             error = vm_io_port_add_handler(&vm, config_range, config_interface);
             assert(!error);
         } else {
-            error = vm_enable_passthrough_ioport(vm_vcpu, ioport_handlers[i].start_port,
-                                                 ioport_handlers[i].end_port);
+            for (int j = 0; j < num_vm_vcpus; j++) {
+                /* Add any IO ports for every vcpu */
+                error = vm_enable_passthrough_ioport(vm_vcpu[j], ioport_handlers[i].start_port,
+                                                     ioport_handlers[i].end_port);
+                assert(!error);
+            }
+        }
+    }
+
+    for (int j = 0; j < num_vm_vcpus; j++) {
+        for (i = 0; i < ioports_num_nonpci_ioports(); i++) {
+            uint16_t start;
+            uint16_t end;
+            const char *desc;
+            seL4_CPtr cap;
+            desc = ioports_get_nonpci_ioport(i, &cap, &start, &end);
+            error = vm_enable_passthrough_ioport(vm_vcpu[j], start, end);
             assert(!error);
         }
     }
-    for (i = 0; i < ioports_num_nonpci_ioports(); i++) {
-        uint16_t start;
-        uint16_t end;
-        const char *desc;
-        seL4_CPtr cap;
-        desc = ioports_get_nonpci_ioport(i, &cap, &start, &end);
-        error = vm_enable_passthrough_ioport(vm_vcpu, start, end);
-        assert(!error);
-    }
+
     /* config start and end encomposes both addr and data ports */
     vm_ioport_range_t pci_config_range = {X86_IO_PCI_CONFIG_START, X86_IO_PCI_CONFIG_END};
     vm_ioport_interface_t pci_config_interface = {pci, vmm_pci_io_port_in, vmm_pci_io_port_out, "PCI Configuration Space"};
@@ -916,12 +945,33 @@ void *main_continued(void *arg)
 
     /* Final VMM setup now that everything is defined and loaded */
     ZF_LOGI("Finalising VMM");
-    error = vmm_plat_init_guest_thread_state(vm_vcpu,
+    error = vmm_plat_init_guest_thread_state(vm_vcpu[BOOT_VCPU],
                                              guest_kernel_image.kernel_image_arch.entry,
                                              guest_boot_info_structure_addr);
     ZF_LOGF_IF(error, "Failed to finalise VMM");
 
-    vcpu_start(vm_vcpu);
+    int pcpu_assignments = 0;
+    if (get_instance_size_pcpus_list() < num_vm_vcpus) {
+        pcpu_assignments = get_instance_size_pcpus_list();
+        ZF_LOGI("pcpu assignments do not match num_vcpus value");
+    } else {
+        pcpu_assignments = num_vm_vcpus;
+    }
+
+    /* Start boot core */
+    vcpu_start(vm_vcpu[BOOT_VCPU]);
+
+    /* Start secondary core(s) */
+    for (i = 1; i < pcpu_assignments; i++) {
+        /* Use affinity as boot core if pcpus are not specified */
+        if (0 == pcpu_assignments) {
+            error = vm_assign_vcpu_target(vm_vcpu[i], get_instance_affinity());
+        } else {
+            error = vm_assign_vcpu_target(vm_vcpu[i], pcpus[i]);
+        }
+        seL4_TCB_Resume(vm_vcpu[i]->tcb.tcb.cptr);
+    }
+    ZF_LOGF_IF(error, "Failed to assign secondary cores");
 
     /* Now go run the event loop */
     vm_run(&vm);

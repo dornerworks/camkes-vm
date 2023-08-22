@@ -68,6 +68,8 @@
     } socket_layout[] = []; \
     /* unique cid that identifies this vm's socket < 256 */ \
     attribute int guest_cid = 0; \
+    attribute int num_vcpus = 1; \
+    attribute int pcpus[] = []; \
     /**/
 
 /* VM and per VM componenents */
