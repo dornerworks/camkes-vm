@@ -140,10 +140,10 @@ config_option(
 config_choice(
     VmZynqmpPetalinuxVersion
     ZYNQMP_PETALINUX_VERSION
-    "The version of Petalinux to use. Default is 2018.3, which will use images \
+    "The version of Petalinux to use. Default is 2021.1, which will use images \
     compatible with the seL4 kernel device tree"
-    "2018_3;VmZynqmpPetalinux2018_3;ZYNQMP_PETALINUX_2018_3;KernelPlatformZynqmp"
     "2021_1;VmZynqmpPetalinux2021_1;ZYNQMP_PETALINUX_2021_1;KernelPlatformZynqmp"
+    "2018_3;VmZynqmpPetalinux2018_3;ZYNQMP_PETALINUX_2018_3;KernelPlatformZynqmp"
     "2022_1;VmZynqmpPetalinux2022_1;ZYNQMP_PETALINUX_2022_1;KernelPlatformZynqmp"
 )
 
