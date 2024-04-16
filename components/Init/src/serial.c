@@ -432,6 +432,8 @@ static void serial_xmit(void *opaque)
 static void serial_ioport_write(void *opaque, uint32_t addr, uint32_t val)
 {
     SerialState *s = opaque;
+    int err = 0;
+    err = serialserv_mux_lock();
 
     addr &= 7;
     DPRINTF("write addr=0x%02x val=0x%02x\n", addr, val);
@@ -579,6 +581,7 @@ static void serial_ioport_write(void *opaque, uint32_t addr, uint32_t val)
         s->scr = val;
         break;
     }
+    err = serialserv_mux_unlock();
 }
 
 static int serial_can_receive(SerialState *s)
@@ -602,6 +605,8 @@ static uint32_t serial_ioport_read(void *opaque, uint32_t addr)
 {
     SerialState *s = opaque;
     uint32_t ret;
+    int err = 0;
+    err = serialserv_mux_lock();
 
     addr &= 7;
     switch (addr) {
@@ -682,6 +687,7 @@ static uint32_t serial_ioport_read(void *opaque, uint32_t addr)
         break;
     }
     DPRINTF("read addr=0x%02x val=0x%02x\n", addr, ret);
+    err = serialserv_mux_unlock();
     return ret;
 }
 
@@ -1014,6 +1020,10 @@ static SerialState serialstate;
 void serial_timer_interrupt(uint32_t completed)
 {
     SerialState *s = (SerialState *)&serialstate;
+
+    int err = 0;
+    err = serialserv_mux_lock();
+
     if (completed & BIT(TIMER_FIFO_TIMEOUT)) {
         fifo_timeout_int(s);
     }
@@ -1034,11 +1044,14 @@ void serial_timer_interrupt(uint32_t completed)
             init_timer_oneshot_relative(TIMER_MORE_CHARS, 3 * NS_IN_MS);
         }
     }
+    err = serialserv_mux_unlock();
 }
 
 void serial_character_interrupt()
 {
     SerialState *s = (SerialState *)&serialstate;
+    int err = 0;
+    err = serialserv_mux_lock();
     uint8_t c;
     while (serial_can_receive(s) && serial_buffer_dequeue(&c)) {
         serial_receive1(s, &c, 1);
@@ -1047,6 +1060,7 @@ void serial_character_interrupt()
         /* Set up a timeout so we go get more chars later */
         init_timer_oneshot_relative(TIMER_MORE_CHARS, 3 * NS_IN_MS);
     }
+    err = serialserv_mux_unlock();
 }
 
 void serial_pre_init(void)
