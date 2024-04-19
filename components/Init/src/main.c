@@ -246,11 +246,6 @@ static memory_range_t guest_fake_devices[] = {
     {0xc8000, 0xe0000 - 0xc8000}, // Mapped hardware and MISC
 };
 
-/* Memory areas we reserve for anonymous allocations */
-static memory_range_t free_anonymous_regions[] = {
-    {0x10003000, 0xa0000000 - 0x10003000},
-};
-
 typedef struct device_notify {
     uint32_t badge;
     /* the function (as described by the user in the configuration) to call
@@ -783,12 +778,13 @@ void *main_continued(void *arg)
                    (void *)base, (void *)(base + bytes));
     }
 
-    for (int i = 0; i < ARRAY_SIZE(free_anonymous_regions); i++) {
-        error = vm_memory_make_anon(&vm, free_anonymous_regions[i].base,
-                                    free_anonymous_regions[i].size);
+    for (int i = 0; i < anonymous_num_regions(); i++) {
+        uintptr_t base;
+        size_t size;
+        anonymous_get_region(i, &base, &size);
+        error = vm_memory_make_anon(&vm, base, size);
         ZF_LOGF_IF(error, "Failed to create anonymous region %p - %p",
-                   (void *)free_anonymous_regions[i].base,
-                   (void *)(free_anonymous_regions[i].base +  free_anonymous_regions[i].size));
+                   (void *)base, (void *)(base + size));
     }
 
     /* Allocate guest ram. This is the main memory that the guest will actually get

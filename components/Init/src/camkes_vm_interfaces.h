@@ -17,6 +17,9 @@ int ram_get_untyped(int ut, uintptr_t *paddr, int *size_bits, seL4_CPtr *cap);
 int exclude_paddr_num_regions(void);
 void exclude_paddr_get_region(int region_num, uintptr_t *paddr, size_t *bytes);
 
+int anonymous_num_regions(void);
+void anonymous_get_region(int region_num, uintptr_t *addr, size_t *size);
+
 int init_cons_num_connections(void);
 uintptr_t init_cons_init_function(int con);
 int init_cons_has_interrupt(int con, uintptr_t *badge, uintptr_t *fun);

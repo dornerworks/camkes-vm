@@ -51,6 +51,7 @@ function(DeclareCAmkESVM init_component)
         C_FLAGS
         ${VM_COMP_EXTRA_C_FLAGS}
         TEMPLATE_SOURCES
+        seL4AnonRegions.template.c
         seL4ExtraRAM.template.c
         seL4ExcludeGuestPAddr.template.c
         seL4InitConnection.template.c
