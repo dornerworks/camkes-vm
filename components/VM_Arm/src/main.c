@@ -843,6 +843,8 @@ static int vm_dtb_init(vm_t *vm, const vm_config_t *vm_config)
 
     ZF_LOGW_IF(!fdt_ori, "No base DTB set");
 
+    memset(gen_dtb_buf, 0, sizeof(gen_dtb_buf));
+
     fdtgen_context_t *context = fdtgen_new_context(gen_dtb_buf, sizeof(gen_dtb_buf));
     if (context == NULL) {
         ZF_LOGE("Couldn't create fdtgen context");
@@ -1445,6 +1447,11 @@ static int main_continued(void)
         }
 
         printf("Reloading VM\n");
+        err = vm_dtb_init(&vm, &vm_config);
+        if (err) {
+            ZF_LOGE("Failed to init DTB (%d)", err);
+            return -1;
+        }
 #ifdef CONFIG_VM_VIRTIO_NET_VIRTQUEUE
         reset_virtqueue_virtio_net(&vm);
 #endif
