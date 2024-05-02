@@ -71,6 +71,8 @@
     attribute int guest_cid = 0; \
     attribute int num_vcpus = 1; \
     attribute int pcpus[] = []; \
+    attribute int vcpu_periods[] = []; \
+    attribute int vcpu_budgets[] = []; \
     /**/
 
 /* VM and per VM componenents */

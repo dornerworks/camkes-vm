@@ -698,7 +698,11 @@ void *main_continued(void *arg)
 
     for (i = 0; i < num_vm_vcpus; i++) {
         // 254 is the max priority
-        vm_vcpu[i] = vm_create_vcpu(&vm, 254);
+#ifdef CONFIG_KERNEL_MCS
+        vm_vcpu[i] = vm_create_vcpu(&vm, 254, vcpu_periods[i], vcpu_budgets[i]);
+#else
+        vm_vcpu[i] = vm_create_vcpu(&vm, 254, 0, 0);
+#endif
         assert(vm_vcpu[i]);
     }
 
