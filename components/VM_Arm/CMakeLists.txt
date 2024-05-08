@@ -149,6 +149,14 @@ config_choice(
 )
 
 config_option(
+    VmVirtPl011Vuart
+    VM_VIRT_PL011_VUART
+    "Option for virtualizing the console using a fully emulated Amba PL011 SBSA device"
+    DEFAULT
+    OFF
+)
+
+config_option(
     VmMapGic
     VM_MAP_GIC
     "Map the GIC VCPU interface using a hardware component. This allows the register to be shared between \
