@@ -396,7 +396,7 @@ static void serial_ioport_write(void *opaque, uint32_t addr, uint32_t val)
     DPRINTF("write addr=0x%02x val=0x%02x\n", addr, val);
     switch (addr) {
     default:
-    case 0:
+    case 0:     /* TRANSMIT HOLDING BUFFER (THR) / RECEIVE BUFFER REGISTER (RBR) / DLAB LOW */
         if (s->lcr & UART_LCR_DLAB) {
             s->divider = (s->divider & 0xff00) | val;
             serial_update_parameters(s);
@@ -416,7 +416,7 @@ static void serial_ioport_write(void *opaque, uint32_t addr, uint32_t val)
             serial_xmit(s);
         }
         break;
-    case 1:
+    case 1:     /* INTERRUPT ENABLE REGISTER (IER) / DLAB HIGH */
         if (s->lcr & UART_LCR_DLAB) {
             s->divider = (s->divider & 0x00ff) | (val << 8);
             serial_update_parameters(s);
@@ -439,7 +439,7 @@ static void serial_ioport_write(void *opaque, uint32_t addr, uint32_t val)
             }
         }
         break;
-    case 2:
+    case 2:     /* INTERRUPT IDENTIFICATION REGISTER (IIR) / FIFO CONTROL REGISTER (FCR) */
         val = val & 0xFF;
 
         if (s->fcr == val) {
@@ -488,7 +488,7 @@ static void serial_ioport_write(void *opaque, uint32_t addr, uint32_t val)
         s->fcr = val & 0xC9;
         serial_update_irq(s);
         break;
-    case 3: {
+    case 3: {   /* LINE CONTROL REGISTER (LCR) */
         int break_enable;
         s->lcr = val;
         serial_update_parameters(s);
@@ -498,18 +498,18 @@ static void serial_ioport_write(void *opaque, uint32_t addr, uint32_t val)
         }
     }
     break;
-    case 4: {
+    case 4: {   /* MODEM CONTROL REGISTER (MCR) */
         s->mcr = val & 0x1f;
         if (val & UART_MCR_LOOP) {
             break;
         }
     }
     break;
-    case 5:
+    case 5:     /* LINE STATUS REGISTER (LSR) */
         break;
-    case 6:
+    case 6:     /* MODEM STATUS REGISTER (MSR) */
         break;
-    case 7:
+    case 7:     /* SCRATCH REGISTER */
         s->scr = val;
         break;
     }
@@ -543,7 +543,7 @@ static uint32_t serial_ioport_read(void *opaque, uint32_t addr)
     addr &= 7;
     switch (addr) {
     default:
-    case 0:
+    case 0:     /* TRANSMIT HOLDING BUFFER (THR) / RECEIVE BUFFER REGISTER (RBR) / DLAB LOW*/
         if (s->lcr & UART_LCR_DLAB) {
             ret = s->divider & 0xff;
         } else {
@@ -562,27 +562,27 @@ static uint32_t serial_ioport_read(void *opaque, uint32_t addr)
             serial_update_irq(s);
         }
         break;
-    case 1:
+    case 1:     /* INTERRUPT ENABLE REGISTER (IER) / DLAB HIGH */
         if (s->lcr & UART_LCR_DLAB) {
             ret = (s->divider >> 8) & 0xff;
         } else {
             ret = s->ier;
         }
         break;
-    case 2:
+    case 2:     /* INTERRUPT IDENTIFICATION REGISTER (IIR) / FIFO CONTROL REGISTER (FCR) */
         ret = s->iir;
         if ((ret & UART_IIR_ID) == UART_IIR_THRI) {
             s->thr_ipending = 0;
             serial_update_irq(s);
         }
         break;
-    case 3:
+    case 3:     /* LINE CONTROL REGISTER (LCR) */
         ret = s->lcr;
         break;
-    case 4:
+    case 4:     /* MODEM CONTROL REGISTER (MCR) */
         ret = s->mcr;
         break;
-    case 5:
+    case 5:     /* LINE STATUS REGISTER (LSR) */
         ret = s->lsr;
         /* Clear break and overrun interrupts */
         if (s->lsr & (UART_LSR_BI | UART_LSR_OE)) {
@@ -590,7 +590,7 @@ static uint32_t serial_ioport_read(void *opaque, uint32_t addr)
             serial_update_irq(s);
         }
         break;
-    case 6:
+    case 6:     /* MODEM STATUS REGISTER (MSR) */
         if (s->mcr & UART_MCR_LOOP) {
             /* in loopback, the modem output pins are connected to the
                inputs */
@@ -609,7 +609,7 @@ static uint32_t serial_ioport_read(void *opaque, uint32_t addr)
             }
         }
         break;
-    case 7:
+    case 7:     /* SCRATCH REGISTER */
         ret = s->scr;
         break;
     }
