@@ -147,8 +147,6 @@ typedef struct SerialState {
     /* NOTE: this hidden state is necessary for tx irq generation as
        it can be reset while reading iir */
     int thr_ipending;
-//    qemu_irq irq;
-//    CharDriverState *chr;
     int last_break_enable;
     int it_shift;
     int baudbase;
@@ -157,33 +155,12 @@ typedef struct SerialState {
     uint64_t last_xmit_ts;              /* Time when the last byte was successfully sent out of the tsr */
     SerialFIFO recv_fifo;
     SerialFIFO xmit_fifo;
-
-//    struct QEMUTimer *fifo_timeout_timer;
     int timeout_ipending;                   /* timeout interrupt pending state */
-//    struct QEMUTimer *transmit_timer;
-
-
     uint64_t char_transmit_time;               /* time to transmit a char in ticks*/
     int poll_msl;
-
-//    struct QEMUTimer *modem_status_poll;
-//    MemoryRegion io;
-
     int serial_level;
     int chars_sent;
 } SerialState;
-
-#if 0
-
-typedef struct ISASerialState {
-    ISADevice dev;
-    uint32_t index;
-    uint32_t iobase;
-    uint32_t isairq;
-    SerialState state;
-} ISASerialState;
-
-#endif
 
 int serial_buffer_dequeue(uint8_t *p);
 
@@ -279,10 +256,8 @@ static void serial_update_irq(SerialState *s)
     if (tmp_iir != UART_IIR_NO_INT) {
 
         vm_set_irq_level(vm.vcpus[BOOT_VCPU], TTYS0_IRQ, 1);
-//        qemu_irq_raise(s->irq);
     } else {
         vm_set_irq_level(vm.vcpus[BOOT_VCPU], TTYS0_IRQ, 0);
-//        qemu_irq_lower(s->irq);
     }
 }
 
@@ -290,7 +265,6 @@ static void serial_update_parameters(SerialState *s)
 {
     int speed, parity, data_bits, stop_bits, frame_size;
     (void)parity;
-//    QEMUSerialSetParams ssp;
 
     if (s->divider == 0) {
         return;
@@ -318,13 +292,8 @@ static void serial_update_parameters(SerialState *s)
     data_bits = (s->lcr & 0x03) + 5;
     frame_size += data_bits + stop_bits;
     speed = s->baudbase / s->divider;
-//    ssp.speed = speed;
-//    ssp.parity = parity;
-//    ssp.data_bits = data_bits;
-//    ssp.stop_bits = stop_bits;
     assert(speed > 0);
     s->char_transmit_time = (get_ticks_per_sec() / speed) * frame_size;
-//    qemu_chr_fe_ioctl(s->chr, CHR_IOCTL_SERIAL_SET_PARAMS, &ssp);
 
     DPRINTF("speed=%d parity=%c data=%d stop=%d\n",
             speed, parity, data_bits, stop_bits);
@@ -333,12 +302,9 @@ static void serial_update_parameters(SerialState *s)
 static void serial_update_msl(SerialState *s)
 {
     uint8_t omsr;
-//    int flags;
 
-//    qemu_del_timer(s->modem_status_poll);
 //    init_timer_stop(TIMER_MODEM_STATUS_TIMER);
 
-//    if (qemu_chr_fe_ioctl(s->chr,CHR_IOCTL_SERIAL_GET_TIOCM, &flags) == -ENOTSUP) {
     if (0) {
         s->poll_msl = -1;
         return;
@@ -346,14 +312,10 @@ static void serial_update_msl(SerialState *s)
 
     omsr = s->msr;
 
-//    s->msr = (flags & CHR_TIOCM_CTS) ? s->msr | UART_MSR_CTS : s->msr & ~UART_MSR_CTS;
     s->msr |= UART_MSR_CTS;
 //    s->msr |= UART_MSR_DSR;
     s->msr |= UART_MSR_DCD;
 //    s->msr |= UART_MSR_RI;
-//    s->msr = (flags & CHR_TIOCM_DSR) ? s->msr | UART_MSR_DSR : s->msr & ~UART_MSR_DSR;
-//    s->msr = (flags & CHR_TIOCM_CAR) ? s->msr | UART_MSR_DCD : s->msr & ~UART_MSR_DCD;
-//    s->msr = (flags & CHR_TIOCM_RI) ? s->msr | UART_MSR_RI : s->msr & ~UART_MSR_RI;
 
     if (s->msr != omsr) {
         /* Set delta bits */
@@ -370,7 +332,6 @@ static void serial_update_msl(SerialState *s)
 
 //    if (s->poll_msl)
 //        init_timer_oneshot_absolute(TIMER_MODEM_STATUS_TIMER, current_time_ns() + get_ticks_per_sec() / 100);
-//        qemu_mod_timer(s->modem_status_poll, qemu_get_clock_ns(vm_clock) + get_ticks_per_sec() / 100);
 }
 
 static void serial_xmit(void *opaque)
@@ -393,12 +354,10 @@ static void serial_xmit(void *opaque)
     if (s->mcr & UART_MCR_LOOP) {
         /* in loopback mode, say that we just received a char */
         serial_receive1(s, &s->tsr, 1);
-//    } else if (qemu_chr_fe_write(s->chr, &s->tsr, 1) != 1) {
     } else if (s->chars_sent >= 16) {
         if (s->tsr_retry <= MAX_XMIT_RETRY) {
             s->tsr_retry++;
             init_timer_oneshot_absolute(TIMER_TRANSMIT_TIMER, new_xmit_ts + s->char_transmit_time);
-//            qemu_mod_timer(s->transmit_timer,  new_xmit_ts + s->char_transmit_time);
             return;
         } else if (s->poll_msl < 0) {
             /* If we exceed MAX_XMIT_RETRY and the backend is not a real serial port, then
@@ -416,11 +375,9 @@ static void serial_xmit(void *opaque)
 
     s->last_xmit_ts = current_time_ns();
     if (!(s->lsr & UART_LSR_THRE))
-//        serial_xmit(s);
     {
         init_timer_oneshot_absolute(TIMER_TRANSMIT_TIMER, s->last_xmit_ts + s->char_transmit_time);
     }
-//        qemu_mod_timer(s->transmit_timer, s->last_xmit_ts + s->char_transmit_time);
 
     if (s->lsr & UART_LSR_THRE) {
         s->lsr |= UART_LSR_TEMT;
@@ -472,7 +429,6 @@ static void serial_ioport_write(void *opaque, uint32_t addr, uint32_t val)
                     s->poll_msl = 1;
                     serial_update_msl(s);
                 } else {
-//                     qemu_del_timer(s->modem_status_poll);
 //                     init_timer_stop(TIMER_MODEM_STATUS_TIMER);
                     s->poll_msl = 0;
                 }
@@ -498,7 +454,6 @@ static void serial_ioport_write(void *opaque, uint32_t addr, uint32_t val)
         /* FIFO clear */
 
         if (val & UART_FCR_RFR) {
-//            qemu_del_timer(s->fifo_timeout_timer);
             init_timer_stop(TIMER_FIFO_TIMEOUT);
             s->timeout_ipending = 0;
             fifo_clear(s, RECV_FIFO);
@@ -540,36 +495,13 @@ static void serial_ioport_write(void *opaque, uint32_t addr, uint32_t val)
         break_enable = (val >> 6) & 1;
         if (break_enable != s->last_break_enable) {
             s->last_break_enable = break_enable;
-//                qemu_chr_fe_ioctl(s->chr, CHR_IOCTL_SERIAL_SET_BREAK,
-//                               &break_enable);
         }
     }
     break;
     case 4: {
-//            int flags;
-        int old_mcr = s->mcr;
         s->mcr = val & 0x1f;
         if (val & UART_MCR_LOOP) {
             break;
-        }
-
-        if (s->poll_msl >= 0 && old_mcr != s->mcr) {
-
-//                qemu_chr_fe_ioctl(s->chr,CHR_IOCTL_SERIAL_GET_TIOCM, &flags);
-
-//                flags &= ~(CHR_TIOCM_RTS | CHR_TIOCM_DTR);
-
-//                if (val & UART_MCR_RTS)
-//                    flags |= CHR_TIOCM_RTS;
-//                if (val & UART_MCR_DTR)
-//                    flags |= CHR_TIOCM_DTR;
-//                printf("set %d\n", val);
-
-//                qemu_chr_fe_ioctl(s->chr,CHR_IOCTL_SERIAL_SET_TIOCM, &flags);
-            /* Update the modem status after a one-character-send wait-time, since there may be a response
-               from the device/computer at the other end of the serial line */
-//                qemu_mod_timer(s->modem_status_poll, qemu_get_clock_ns(vm_clock) + s->char_transmit_time);
-//                init_timer_oneshot_absolute(TIMER_MODEM_STATUS_TIMER, current_time_ns() + s->char_transmit_time);
         }
     }
     break;
@@ -620,7 +552,6 @@ static uint32_t serial_ioport_read(void *opaque, uint32_t addr)
                 if (s->recv_fifo.count == 0) {
                     s->lsr &= ~(UART_LSR_DR | UART_LSR_BI);
                 } else {
-//                    qemu_mod_timer(s->fifo_timeout_timer, qemu_get_clock_ns (vm_clock) + s->char_transmit_time * 4);
                     init_timer_oneshot_absolute(TIMER_FIFO_TIMEOUT, current_time_ns() + s->char_transmit_time * 4);
                 }
                 s->timeout_ipending = 0;
@@ -629,10 +560,6 @@ static uint32_t serial_ioport_read(void *opaque, uint32_t addr)
                 s->lsr &= ~(UART_LSR_DR | UART_LSR_BI);
             }
             serial_update_irq(s);
-            if (!(s->mcr & UART_MCR_LOOP)) {
-                /* in loopback mode, don't receive any data */
-//                qemu_chr_accept_input(s->chr);
-            }
         }
         break;
     case 1:
@@ -691,19 +618,6 @@ static uint32_t serial_ioport_read(void *opaque, uint32_t addr)
     return ret;
 }
 
-#if 0
-
-static void serial_receive_break(SerialState *s)
-{
-    s->rbr = 0;
-    /* When the LSR_DR is set a null byte is pushed into the fifo */
-    fifo_put(s, RECV_FIFO, '\0');
-    s->lsr |= UART_LSR_BI | UART_LSR_DR;
-    serial_update_irq(s);
-}
-
-#endif
-
 /* There's data in recv_fifo and s->rbr has not been read for 4 char transmit times */
 
 static void fifo_timeout_int(void *opaque)
@@ -715,16 +629,6 @@ static void fifo_timeout_int(void *opaque)
     }
 }
 
-#if 0
-
-static int serial_can_receive1(void *opaque)
-{
-    SerialState *s = opaque;
-    return serial_can_receive(s);
-}
-
-#endif
-
 static void serial_receive1(void *opaque, const uint8_t *buf, int size)
 {
     SerialState *s = opaque;
@@ -735,7 +639,6 @@ static void serial_receive1(void *opaque, const uint8_t *buf, int size)
         }
         s->lsr |= UART_LSR_DR;
         /* call the timeout receive callback in 4 char transmit time */
-//        qemu_mod_timer(s->fifo_timeout_timer, qemu_get_clock_ns (vm_clock) + s->char_transmit_time * 4);
         init_timer_oneshot_absolute(TIMER_FIFO_TIMEOUT, current_time_ns() + s->char_transmit_time * 4);
     } else {
         if (s->lsr & UART_LSR_DR) {
@@ -746,60 +649,6 @@ static void serial_receive1(void *opaque, const uint8_t *buf, int size)
     }
     serial_update_irq(s);
 }
-
-#if 0
-
-static void serial_event(void *opaque, int event)
-{
-    SerialState *s = opaque;
-    DPRINTF("event %x\n", event);
-    if (event == CHR_EVENT_BREAK) {
-        serial_receive_break(s);
-    }
-}
-
-static void serial_pre_save(void *opaque)
-{
-    SerialState *s = opaque;
-    s->fcr_vmstate = s->fcr;
-}
-
-static int serial_post_load(void *opaque, int version_id)
-{
-    SerialState *s = opaque;
-
-    if (version_id < 3) {
-        s->fcr_vmstate = 0;
-    }
-    /* Initialize fcr via setter to perform essential side-effects */
-    serial_ioport_write(s, 0x02, s->fcr_vmstate);
-    serial_update_parameters(s);
-    return 0;
-}
-
-static const VMStateDescription vmstate_serial = {
-    .name = "serial",
-    .version_id = 3,
-    .minimum_version_id = 2,
-    .pre_save = serial_pre_save,
-    .post_load = serial_post_load,
-    .fields      = (VMStateField [])
-    {
-        VMSTATE_UINT16_V(divider, SerialState, 2),
-        VMSTATE_UINT8(rbr, SerialState),
-        VMSTATE_UINT8(ier, SerialState),
-        VMSTATE_UINT8(iir, SerialState),
-        VMSTATE_UINT8(lcr, SerialState),
-        VMSTATE_UINT8(mcr, SerialState),
-        VMSTATE_UINT8(lsr, SerialState),
-        VMSTATE_UINT8(msr, SerialState),
-        VMSTATE_UINT8(scr, SerialState),
-        VMSTATE_UINT8_V(fcr_vmstate, SerialState, 3),
-        VMSTATE_END_OF_LIST()
-    }
-};
-
-#endif
 
 static void serial_reset(void *opaque)
 {
@@ -822,198 +671,17 @@ static void serial_reset(void *opaque)
     fifo_clear(s, RECV_FIFO);
     fifo_clear(s, XMIT_FIFO);
 
-//    s->last_xmit_ts = qemu_get_clock_ns(vm_clock);
     s->last_xmit_ts = current_time_ns();
 
     s->thr_ipending = 0;
     s->last_break_enable = 0;
-//    qemu_irq_lower(s->irq);
     s->serial_level = 0;
-//    serial_irq_lower();
 }
 
 static void serial_init_core(SerialState *s)
 {
-//    if (!s->chr) {
-//        fprintf(stderr, "Can't create serial device, empty char device\n");
-//  exit(1);
-//    }
-
-//    s->modem_status_poll = qemu_new_timer_ns(vm_clock, (QEMUTimerCB *) serial_update_msl, s);
-
-//    s->fifo_timeout_timer = qemu_new_timer_ns(vm_clock, (QEMUTimerCB *) fifo_timeout_int, s);
-//    s->transmit_timer = qemu_new_timer_ns(vm_clock, (QEMUTimerCB *) serial_xmit, s);
-
-//    qemu_register_reset(serial_reset, s);
     serial_reset(s);
-
-//    qemu_chr_add_handlers(s->chr, serial_can_receive1, serial_receive1,
-//                          serial_event, s);
 }
-
-#if 0
-
-/* Change the main reference oscillator frequency. */
-void serial_set_frequency(SerialState *s, uint32_t frequency)
-{
-    s->baudbase = frequency;
-    serial_update_parameters(s);
-}
-
-static const int isa_serial_io[MAX_SERIAL_PORTS] = { 0x3f8, 0x2f8, 0x3e8, 0x2e8 };
-static const int isa_serial_irq[MAX_SERIAL_PORTS] = { 4, 3, 4, 3 };
-
-static const MemoryRegionPortio serial_portio[] = {
-    { 0, 8, 1, .read = serial_ioport_read, .write = serial_ioport_write },
-    PORTIO_END_OF_LIST()
-};
-
-static const MemoryRegionOps serial_io_ops = {
-    .old_portio = serial_portio
-};
-
-static int serial_isa_initfn(ISADevice *dev)
-{
-    static int index;
-    ISASerialState *isa = DO_UPCAST(ISASerialState, dev, dev);
-    SerialState *s = &isa->state;
-
-    if (isa->index == -1) {
-        isa->index = index;
-    }
-    if (isa->index >= MAX_SERIAL_PORTS) {
-        return -1;
-    }
-    if (isa->iobase == -1) {
-        isa->iobase = isa_serial_io[isa->index];
-    }
-    if (isa->isairq == -1) {
-        isa->isairq = isa_serial_irq[isa->index];
-    }
-    index++;
-
-    s->baudbase = 115200;
-    isa_init_irq(dev, &s->irq, isa->isairq);
-    serial_init_core(s);
-    qdev_set_legacy_instance_id(&dev->qdev, isa->iobase, 3);
-
-    memory_region_init_io(&s->io, &serial_io_ops, s, "serial", 8);
-    isa_register_ioport(dev, &s->io, isa->iobase);
-    return 0;
-}
-
-static const VMStateDescription vmstate_isa_serial = {
-    .name = "serial",
-    .version_id = 3,
-    .minimum_version_id = 2,
-    .fields      = (VMStateField [])
-    {
-        VMSTATE_STRUCT(state, ISASerialState, 0, vmstate_serial, SerialState),
-        VMSTATE_END_OF_LIST()
-    }
-};
-
-SerialState *serial_init(int base, qemu_irq irq, int baudbase,
-                         CharDriverState *chr)
-{
-    SerialState *s;
-
-    s = g_malloc0(sizeof(SerialState));
-
-    s->irq = irq;
-    s->baudbase = baudbase;
-    s->chr = chr;
-    serial_init_core(s);
-
-    vmstate_register(NULL, base, &vmstate_serial, s);
-
-    register_ioport_write(base, 8, 1, serial_ioport_write, s);
-    register_ioport_read(base, 8, 1, serial_ioport_read, s);
-    return s;
-}
-
-/* Memory mapped interface */
-static uint64_t serial_mm_read(void *opaque, target_phys_addr_t addr,
-                               unsigned size)
-{
-    SerialState *s = opaque;
-    return serial_ioport_read(s, addr >> s->it_shift);
-}
-
-static void serial_mm_write(void *opaque, target_phys_addr_t addr,
-                            uint64_t value, unsigned size)
-{
-    SerialState *s = opaque;
-    value &= ~0u >> (32 - (size * 8));
-    serial_ioport_write(s, addr >> s->it_shift, value);
-}
-
-static const MemoryRegionOps serial_mm_ops[3] = {
-    [DEVICE_NATIVE_ENDIAN] = {
-        .read = serial_mm_read,
-        .write = serial_mm_write,
-        .endianness = DEVICE_NATIVE_ENDIAN,
-    },
-    [DEVICE_LITTLE_ENDIAN] = {
-        .read = serial_mm_read,
-        .write = serial_mm_write,
-        .endianness = DEVICE_LITTLE_ENDIAN,
-    },
-    [DEVICE_BIG_ENDIAN] = {
-        .read = serial_mm_read,
-        .write = serial_mm_write,
-        .endianness = DEVICE_BIG_ENDIAN,
-    },
-};
-
-SerialState *serial_mm_init(MemoryRegion *address_space,
-                            target_phys_addr_t base, int it_shift,
-                            qemu_irq irq, int baudbase,
-                            CharDriverState *chr, enum device_endian end)
-{
-    SerialState *s;
-
-    s = g_malloc0(sizeof(SerialState));
-
-    s->it_shift = it_shift;
-    s->irq = irq;
-    s->baudbase = baudbase;
-    s->chr = chr;
-
-    serial_init_core(s);
-    vmstate_register(NULL, base, &vmstate_serial, s);
-
-    memory_region_init_io(&s->io, &serial_mm_ops[end], s,
-                          "serial", 8 << it_shift);
-    memory_region_add_subregion(address_space, base, &s->io);
-
-    serial_update_msl(s);
-    return s;
-}
-
-static ISADeviceInfo serial_isa_info = {
-    .qdev.name  = "isa-serial",
-    .qdev.size  = sizeof(ISASerialState),
-    .qdev.vmsd  = &vmstate_isa_serial,
-    .init       = serial_isa_initfn,
-    .qdev.props = (Property[])
-    {
-        DEFINE_PROP_UINT32("index", ISASerialState, index,   -1),
-        DEFINE_PROP_HEX32("iobase", ISASerialState, iobase,  -1),
-        DEFINE_PROP_UINT32("irq",   ISASerialState, isairq,  -1),
-        DEFINE_PROP_CHR("chardev",  ISASerialState, state.chr),
-        DEFINE_PROP_END_OF_LIST(),
-    },
-};
-
-static void serial_register_devices(void)
-{
-    isa_qdev_register(&serial_isa_info);
-}
-
-device_init(serial_register_devices)
-
-#endif
 
 static SerialState serialstate;
 
