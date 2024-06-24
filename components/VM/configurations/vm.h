@@ -31,6 +31,16 @@
 #define VM_PIC_BADGE_IRQ_14 134250496 /* BIT(27) | BIT(15) */
 #define VM_PIC_BADGE_IRQ_15 134283264 /* BIT(27) | BIT(16) */
 
+/* Put the time server at the second highest priority */
+#define TIME_SERVER_PRIO 254
+/* Put the serial server priority at maximum, otherwise it gets preempted by the time server when receiving chars. */
+#define SERIAL_SERVER_PRIO 255
+
+#if SERIAL_SERVER_PRIO > TIME_SERVER_PRIO
+#warning "The Time Server is not the highest priority thread in the system. That means that the timing of guests can be impacted by serial I/O. The serial server is not expected to be used in production systems, especially those with real-time constraints"
+#endif
+
+
 /* Base definition of the Init component. This gets
  * extended in the per Vm configuration */
 #define VM_INIT_DEF() \
@@ -136,14 +146,11 @@
 #define VM_CONFIGURATION_DEF() \
     fserv.heap_size = 0x30000; \
     time_server.timers_per_client = 12; \
-    /* Put the entire time server at the highest priority */ \
-    time_server.priority = 255; \
+    time_server.priority = TIME_SERVER_PRIO; \
     /* The timer server runs better if it can get the true tsc frequency from the kernel */ \
     time_server.simple_extra_bootinfo = ["SEL4_BOOTINFO_HEADER_X86_TSC_FREQ"]; \
     time_server.simple = true; \
-    /* Put the serial interrupt at 200  \
-     * but Leave the rest of the serial at default priority */ \
-    serial.serial_irq_priority = 200; \
+    serial.priority = SERIAL_SERVER_PRIO; \
     /* Now the VMM, guest and everything else should be at \
      * the default priority of 100 */ \
     /**/
