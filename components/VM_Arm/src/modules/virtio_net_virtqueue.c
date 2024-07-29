@@ -164,6 +164,11 @@ static int virtio_net_notify(vm_t *vmm, void *cookie)
 
 void make_virtqueue_virtio_net(vm_t *vm, void *cookie)
 {
+    int num_vswitch_entries = ARRAY_SIZE(vswitch_layout);
+    if (num_vswitch_entries == 0) {
+        // If a VM doesn't have a virtio-net layout defined then we skip the init
+        return;
+    }
     int err;
     virtio_net_callbacks_t callbacks;
     callbacks.tx_callback = tx_virtqueue_forward;
@@ -176,7 +181,6 @@ void make_virtqueue_virtio_net(vm_t *vm, void *cookie)
         ZF_LOGF("Unable to initialise vswitch library");
     }
 
-    int num_vswitch_entries = ARRAY_SIZE(vswitch_layout);
     for (int i = 0; i < num_vswitch_entries; i++) {
         struct vswitch_mapping mac_mapping = vswitch_layout[i];
         struct ether_addr guest_macaddr;
@@ -198,11 +202,7 @@ void make_virtqueue_virtio_net(vm_t *vm, void *cookie)
         err = camkes_virtqueue_device_init_with_recv(vq_recv, mac_mapping.recv_id,
                                                      &recv_notif, &recv_badge);
         if (err) {
-            // TODO: make the VMM smarter about initializing virtio-net. It should only attempt if it
-            //       is configured to have a virtio-net device. Currently it attempts depending on the
-            //       global (cross-vm) define CONFIG_VM_PCI_SUPPORT.
             ZF_LOGW("Unable to initialise recv virtqueue for VM %d (%s)", vm->vm_id, vm->vm_name);
-            ZF_LOGW("Note: this is only an error if this VM is configured to have a virtio-net device");
             virtio_net = NULL;
             return;
         }
