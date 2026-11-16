@@ -165,6 +165,16 @@ config_option(
     OFF
 )
 
+config_option(
+    VmImageRemap
+    VM_IMAGE_REMAP
+    "Map reserved frames into kernel and rootfs regions instead of loading from CPIO -\
+     region does not get mapped one-to-one; breaks ability to pass-through DMA devices\
+     without an IOMMU"
+    DEFAULT
+    OFF
+)
+
 add_config_library(arm_vm "${configure_string}")
 
 DeclareCAmkESARMVM(VM)

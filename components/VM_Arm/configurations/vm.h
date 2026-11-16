@@ -73,7 +73,7 @@ configuration{                                                                  
 #endif
 #define VM_INIT_DEF() \
     control; \
-    uses FileServerInterface fs; \
+    maybe uses FileServerInterface fs; \
     DEF_TK1DEVICEFWD \
     DEF_KERNELARMPLATFORM_EXYNOS5410 \
     DEF_VMMAPGIC \
